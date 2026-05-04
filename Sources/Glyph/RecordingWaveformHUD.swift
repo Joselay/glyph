@@ -16,24 +16,22 @@ final class RecordingWaveformHUD {
         )
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        let materialView = NSVisualEffectView(frame: frame)
-        materialView.material = .hudWindow
-        materialView.blendingMode = .behindWindow
-        materialView.state = .active
-        materialView.wantsLayer = true
-        materialView.layer?.cornerRadius = 24
-        materialView.layer?.masksToBounds = true
+        let containerView = NSView(frame: frame)
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.92).cgColor
+        containerView.layer?.cornerRadius = 18
+        containerView.layer?.masksToBounds = true
 
-        waveformView.frame = materialView.bounds
+        waveformView.frame = containerView.bounds
         waveformView.autoresizingMask = [.width, .height]
-        materialView.addSubview(waveformView)
-        panel.contentView = materialView
+        containerView.addSubview(waveformView)
+        panel.contentView = containerView
     }
 
     func show() {
@@ -83,9 +81,10 @@ final class RecordingWaveformHUD {
 }
 
 private final class RecordingWaveformView: NSView {
-    private static let barCount = 34
+    private static let barCount = 24
     private var levels = Array(repeating: CGFloat(0.08), count: barCount)
     private var smoothedLevel: CGFloat = 0.08
+    private var nextLevelIndex = 0
 
     override var isFlipped: Bool {
         true
@@ -94,6 +93,7 @@ private final class RecordingWaveformView: NSView {
     func reset() {
         levels = Array(repeating: CGFloat(0.08), count: Self.barCount)
         smoothedLevel = 0.08
+        nextLevelIndex = 0
         needsDisplay = true
     }
 
@@ -102,8 +102,8 @@ private final class RecordingWaveformView: NSView {
         let peak = normalizedPower(peakPower)
         let target = max(0.08, min(1, average * 0.72 + peak * 0.28))
         smoothedLevel = smoothedLevel * 0.68 + target * 0.32
-        levels.removeFirst()
-        levels.append(smoothedLevel)
+        levels[nextLevelIndex] = smoothedLevel
+        nextLevelIndex = (nextLevelIndex + 1) % levels.count
         needsDisplay = true
     }
 
@@ -135,7 +135,8 @@ private final class RecordingWaveformView: NSView {
         let centerY = rect.midY
         let maxHeight = rect.height
 
-        for (index, level) in levels.enumerated() {
+        for index in levels.indices {
+            let level = levels[(nextLevelIndex + index) % levels.count]
             let x = rect.minX + CGFloat(index) * (barWidth + gap)
             let shaped = pow(level, 0.72)
             let height = max(8, maxHeight * shaped)

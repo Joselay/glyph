@@ -123,4 +123,10 @@ expect(
     "transcript cleaner should remove timestamps and collapse whitespace"
 )
 
+let bomPrefixedTranscript = "\u{feff}[00:00:00.000 --> 00:00:01.000]  open Package.swift"
+expect(
+    TranscriptionCleaner.clean(bomPrefixedTranscript) == "open Package.swift",
+    "transcript cleaner should remove a BOM before timestamp parsing"
+)
+
 print("GlyphSpec passed")

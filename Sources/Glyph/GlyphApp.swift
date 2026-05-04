@@ -578,7 +578,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             waveformHUD.update(from: recorder)
         }
 
-        waveformTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        waveformTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let recorder = self.recorder else {
                     return

@@ -16,6 +16,7 @@ app: build icon
 	cp Resources/Info.plist "$(APP_DIR)/Contents/Info.plist"
 	cp "$(APP_ICON)" "$(APP_DIR)/Contents/Resources/AppIcon.icns"
 	chmod +x "$(APP_DIR)/Contents/MacOS/$(APP_NAME)"
+	strip -x "$(APP_DIR)/Contents/MacOS/$(APP_NAME)" 2>/dev/null || true
 	if security find-identity -v -p codesigning | grep -q '"$(SIGN_IDENTITY)"'; then \
 		codesign --force --deep --sign "$(SIGN_IDENTITY)" "$(APP_DIR)" >/dev/null; \
 	else \
@@ -24,7 +25,7 @@ app: build icon
 	@echo "$(APP_DIR)"
 
 build:
-	swift build -c $(CONFIGURATION)
+	swift build -c $(CONFIGURATION) --product $(APP_NAME)
 
 icon:
 	swift Scripts/generate_app_icon.swift "$(BUILD_ROOT)"
