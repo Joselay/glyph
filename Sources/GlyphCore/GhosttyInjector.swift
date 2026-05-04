@@ -23,18 +23,23 @@ public struct GhosttyInjector: Sendable {
     public static let handlerName = "injectText"
 
     public static let scriptSource = """
-    on \(handlerName)(payload)
+    on \(handlerName)(payload, shouldSubmit)
         tell application id "\(ghosttyBundleIdentifier)"
+            activate
             set term to focused terminal of selected tab of front window
             input text payload to term
         end tell
+        if shouldSubmit then
+            delay 0.05
+            tell application "System Events" to key code 36
+        end if
         return "ok"
     end \(handlerName)
     """
 
     public init() {}
 
-    public func inject(_ text: String) throws {
+    public func inject(_ text: String, submit: Bool = false) throws {
         guard let script = NSAppleScript(source: Self.scriptSource) else {
             throw GhosttyInjectorError.compileFailed("Could not create NSAppleScript.")
         }
@@ -45,7 +50,7 @@ public struct GhosttyInjector: Sendable {
         }
 
         var executionError: NSDictionary?
-        let result = script.executeAppleEvent(Self.eventDescriptor(for: text), error: &executionError)
+        let result = script.executeAppleEvent(Self.eventDescriptor(for: text, submit: submit), error: &executionError)
 
         guard executionError == nil else {
             throw GhosttyInjectorError.executionFailed(Self.errorMessage(from: executionError))
@@ -56,7 +61,7 @@ public struct GhosttyInjector: Sendable {
         }
     }
 
-    public static func eventDescriptor(for text: String) -> NSAppleEventDescriptor {
+    public static func eventDescriptor(for text: String, submit: Bool = false) -> NSAppleEventDescriptor {
         let event = NSAppleEventDescriptor(
             eventClass: AEEventClass(kASAppleScriptSuite),
             eventID: AEEventID(kASSubroutineEvent),
@@ -68,6 +73,7 @@ public struct GhosttyInjector: Sendable {
 
         let parameters = NSAppleEventDescriptor.list()
         parameters.insert(NSAppleEventDescriptor(string: text), at: 1)
+        parameters.insert(NSAppleEventDescriptor(boolean: submit), at: 2)
         event.setParam(parameters, forKeyword: AEKeyword(keyDirectObject))
 
         return event

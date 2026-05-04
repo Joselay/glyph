@@ -1,6 +1,8 @@
 # Glyph
 
-Glyph is a native macOS menu bar app for dictating into Codex CLI running in Ghostty.
+Glyph is a lightweight native macOS menu bar utility for dictating into Codex CLI running in Ghostty.
+
+It intentionally has no main window. The menu bar item exposes runtime status, a recording-only waveform HUD, a short last-transcript preview, recovery actions, permission checks, launch-at-login, auto-submit, and quit.
 
 ## Requirements
 
@@ -22,7 +24,14 @@ Glyph is a native macOS menu bar app for dictating into Codex CLI running in Gho
 
 On first run, macOS may ask for Microphone, Accessibility, and Automation permission. Accessibility is used for the global hold-to-record trigger. Automation is used to send the transcript from Glyph to Ghostty.
 
-The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies.
+The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies. Its waveform meter runs only while recording and stops immediately on release.
+
+## Menu
+
+- `Auto-submit` is off by default. When enabled, Glyph sends Return after the transcript so Codex CLI submits immediately.
+- `Launch at Login` uses macOS's native login item service.
+- `Copy Last Transcript` and `Send Last Transcript` show short status feedback in the menu after they run.
+- Permission rows stay visible for Accessibility shortcut access and Microphone access, with direct shortcuts to both macOS settings panes.
 
 ## Privacy
 

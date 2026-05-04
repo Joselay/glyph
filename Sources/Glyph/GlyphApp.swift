@@ -3,6 +3,7 @@ import ApplicationServices
 import AVFAudio
 import AVFoundation
 import GlyphCore
+import ServiceManagement
 
 @main
 struct GlyphMain {
@@ -19,6 +20,7 @@ struct GlyphMain {
 @MainActor
 final class GlyphApp: NSObject, NSApplicationDelegate {
     private static let rightOptionKeyCode: UInt16 = 61
+    private static let autoSubmitDefaultsKey = "autoSubmitEnabled"
 
     private enum State {
         case idle
@@ -29,24 +31,40 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     private let settings = WhisperSettings.defaults()
+    private let userDefaults = UserDefaults.standard
     private var statusItem: NSStatusItem?
-    private let statusIcon = GlyphMenuBarIcon.makeImage()
+    private let idleStatusIcon = GlyphMenuBarIcon.makeImage(style: .idle)
+    private let recordingStatusIcon = GlyphMenuBarIcon.makeImage(style: .recording)
+    private let transcribingStatusIcon = GlyphMenuBarIcon.makeImage(style: .transcribing)
+    private let errorStatusIcon = GlyphMenuBarIcon.makeImage(style: .error)
+    private let waveformHUD = RecordingWaveformHUD()
     private var sendLastMenuItem = NSMenuItem()
     private var copyLastMenuItem = NSMenuItem()
+    private var lastTranscriptPreviewMenuItem = NSMenuItem()
+    private var autoSubmitMenuItem = NSMenuItem()
+    private var launchAtLoginMenuItem = NSMenuItem()
     private var shortcutAccessMenuItem = NSMenuItem()
+    private var microphoneAccessMenuItem = NSMenuItem()
     private var statusMenuItem = NSMenuItem()
-    private var whisperMenuItem = NSMenuItem()
     private var eventMonitors: [Any] = []
     private var isRecordingChordDown = false
     private var recorder: AVAudioRecorder?
+    private var waveformTimer: Timer?
     private var recordingStartedAt: Date?
-    private var recordingMeterTimer: Timer?
-    private var recordingPeakPower: Float = -160
-    private var recordingAveragePower: Float = -160
     private var lastTranscript = ""
+    private var transientStatusToken: UUID?
     private var state: State = .idle {
         didSet {
             updateStatus()
+        }
+    }
+
+    private var autoSubmitEnabled: Bool {
+        get {
+            userDefaults.bool(forKey: Self.autoSubmitDefaultsKey)
+        }
+        set {
+            userDefaults.set(newValue, forKey: Self.autoSubmitDefaultsKey)
         }
     }
 
@@ -61,21 +79,8 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         for monitor in eventMonitors {
             NSEvent.removeMonitor(monitor)
         }
-        recordingMeterTimer?.invalidate()
         recorder?.stop()
-    }
-
-    @objc private func toggleRecording() {
-        switch state {
-        case .idle, .error:
-            Task {
-                await startRecording()
-            }
-        case .recording:
-            stopRecording()
-        case .transcribing, .injecting:
-            break
-        }
+        stopWaveformHUD()
     }
 
     @objc private func injectLastTranscript() {
@@ -95,6 +100,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(lastTranscript, forType: .string)
+        showTransientStatus("Copied Last Transcript")
     }
 
     @objc private func openAccessibilitySettings() {
@@ -103,8 +109,36 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func openMicrophoneSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func recheckPermissions() {
-        refreshPermissionStatus(promptAccessibility: false)
+        let permissions = refreshPermissionStatus(promptAccessibility: false)
+        showPermissionStatus(permissions)
+    }
+
+    @objc private func toggleAutoSubmit() {
+        autoSubmitEnabled.toggle()
+        refreshAutoSubmitMenuItem()
+        showTransientStatus(autoSubmitEnabled ? "Auto-submit: On" : "Auto-submit: Off")
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+
+            refreshLaunchAtLoginMenuItem()
+            showTransientStatus(launchAtLoginSummaryTitle())
+        } catch {
+            state = .error(error.localizedDescription)
+        }
     }
 
     @objc private func quit() {
@@ -113,15 +147,21 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.image = statusIcon
+        statusItem?.button?.image = idleStatusIcon
         statusItem?.button?.imagePosition = .imageOnly
         statusItem?.button?.title = ""
         statusItem?.button?.toolTip = "Glyph"
 
         let menu = NSMenu()
 
+        statusMenuItem = NSMenuItem(title: "Ready. Hold Right Option.", action: nil, keyEquivalent: "")
+        statusMenuItem.isEnabled = false
+
+        lastTranscriptPreviewMenuItem = NSMenuItem(title: "Last: None", action: nil, keyEquivalent: "")
+        lastTranscriptPreviewMenuItem.isEnabled = false
+
         sendLastMenuItem = NSMenuItem(
-            title: "Send Last Transcript to Ghostty",
+            title: "Send Last Transcript",
             action: #selector(injectLastTranscript),
             keyEquivalent: ""
         )
@@ -136,29 +176,47 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         copyLastMenuItem.target = self
         copyLastMenuItem.isEnabled = false
 
-        statusMenuItem = NSMenuItem(title: "Ready. Hold Right Option.", action: nil, keyEquivalent: "")
-        statusMenuItem.isEnabled = false
-
-        whisperMenuItem = NSMenuItem(
-            title: "Whisper: \(URL(fileURLWithPath: settings.modelPath).lastPathComponent)",
-            action: nil,
+        autoSubmitMenuItem = NSMenuItem(
+            title: "Auto-submit",
+            action: #selector(toggleAutoSubmit),
             keyEquivalent: ""
         )
-        whisperMenuItem.isEnabled = false
+        autoSubmitMenuItem.target = self
+
+        launchAtLoginMenuItem = NSMenuItem(
+            title: "Launch at Login",
+            action: #selector(toggleLaunchAtLogin),
+            keyEquivalent: ""
+        )
+        launchAtLoginMenuItem.target = self
 
         shortcutAccessMenuItem = NSMenuItem(
-            title: "Global Shortcut: Checking",
+            title: "Shortcut: Checking",
             action: nil,
             keyEquivalent: ""
         )
         shortcutAccessMenuItem.isEnabled = false
 
+        microphoneAccessMenuItem = NSMenuItem(
+            title: "Microphone: Checking",
+            action: nil,
+            keyEquivalent: ""
+        )
+        microphoneAccessMenuItem.isEnabled = false
+
         let openShortcutAccessMenuItem = NSMenuItem(
-            title: "Open Shortcut Access Settings",
+            title: "Open Accessibility Settings",
             action: #selector(openAccessibilitySettings),
             keyEquivalent: ""
         )
         openShortcutAccessMenuItem.target = self
+
+        let openMicrophoneSettingsMenuItem = NSMenuItem(
+            title: "Open Microphone Settings",
+            action: #selector(openMicrophoneSettings),
+            keyEquivalent: ""
+        )
+        openMicrophoneSettingsMenuItem.target = self
 
         let recheckMenuItem = NSMenuItem(
             title: "Recheck Permissions",
@@ -170,44 +228,61 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         let quitMenuItem = NSMenuItem(title: "Quit Glyph", action: #selector(quit), keyEquivalent: "q")
         quitMenuItem.target = self
 
+        menu.addItem(statusMenuItem)
+        menu.addItem(lastTranscriptPreviewMenuItem)
+        menu.addItem(.separator())
         menu.addItem(sendLastMenuItem)
         menu.addItem(copyLastMenuItem)
         menu.addItem(.separator())
-        menu.addItem(statusMenuItem)
-        menu.addItem(NSMenuItem(title: "Target: Ghostty focused terminal", action: nil, keyEquivalent: ""))
-        menu.items.last?.isEnabled = false
-        menu.addItem(whisperMenuItem)
-        menu.addItem(shortcutAccessMenuItem)
+        menu.addItem(autoSubmitMenuItem)
+        menu.addItem(launchAtLoginMenuItem)
         menu.addItem(.separator())
+        menu.addItem(shortcutAccessMenuItem)
+        menu.addItem(microphoneAccessMenuItem)
         menu.addItem(openShortcutAccessMenuItem)
+        menu.addItem(openMicrophoneSettingsMenuItem)
         menu.addItem(recheckMenuItem)
         menu.addItem(.separator())
         menu.addItem(quitMenuItem)
 
         statusItem?.menu = menu
+        refreshAutoSubmitMenuItem()
+        refreshLaunchAtLoginMenuItem()
+        refreshLastTranscriptPreview()
         refreshPermissionStatus(promptAccessibility: false)
     }
 
     private func updateStatus() {
         switch state {
         case .idle:
+            statusItem?.button?.image = idleStatusIcon
             statusMenuItem.title = "Ready. Hold Right Option."
             statusItem?.button?.toolTip = "Glyph: Ready. Hold Right Option."
         case .recording:
-            refreshRecordingPresentation()
+            transientStatusToken = nil
+            statusItem?.button?.image = recordingStatusIcon
+            statusMenuItem.title = "Recording"
+            statusItem?.button?.toolTip = "Glyph: Recording"
         case .transcribing:
+            transientStatusToken = nil
+            statusItem?.button?.image = transcribingStatusIcon
             statusMenuItem.title = "Transcribing with whisper.cpp"
             statusItem?.button?.toolTip = "Glyph: Transcribing with whisper.cpp"
         case .injecting:
+            transientStatusToken = nil
+            statusItem?.button?.image = transcribingStatusIcon
             statusMenuItem.title = "Sending to Ghostty"
             statusItem?.button?.toolTip = "Glyph: Sending to Ghostty"
         case .error(let message):
+            transientStatusToken = nil
+            statusItem?.button?.image = errorStatusIcon
             statusMenuItem.title = message
             statusItem?.button?.toolTip = "Glyph: \(message)"
         }
 
         sendLastMenuItem.isEnabled = !lastTranscript.isEmpty
         copyLastMenuItem.isEnabled = !lastTranscript.isEmpty
+        refreshLastTranscriptPreview()
     }
 
     private func requestAccessibilityIfNeeded() {
@@ -215,17 +290,102 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     @discardableResult
-    private func refreshPermissionStatus(promptAccessibility: Bool) -> Bool {
-        let trusted: Bool
+    private func refreshPermissionStatus(promptAccessibility: Bool) -> PermissionStatus {
+        let shortcutAllowed: Bool
         if promptAccessibility {
             let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
-            trusted = AXIsProcessTrustedWithOptions(options)
+            shortcutAllowed = AXIsProcessTrustedWithOptions(options)
         } else {
-            trusted = AXIsProcessTrusted()
+            shortcutAllowed = AXIsProcessTrusted()
         }
 
-        shortcutAccessMenuItem.title = trusted ? "Global Shortcut: Allowed" : "Global Shortcut: Missing"
-        return trusted
+        let status = PermissionStatus.current(shortcutAllowed: shortcutAllowed)
+        shortcutAccessMenuItem.title = status.shortcutTitle
+        microphoneAccessMenuItem.title = status.microphoneTitle
+        return status
+    }
+
+    private func showPermissionStatus(_ status: PermissionStatus) {
+        showTransientStatus(status.summaryTitle)
+    }
+
+    private func refreshAutoSubmitMenuItem() {
+        autoSubmitMenuItem.state = autoSubmitEnabled ? .on : .off
+        autoSubmitMenuItem.title = autoSubmitEnabled ? "Auto-submit: On" : "Auto-submit: Off"
+    }
+
+    private func refreshLaunchAtLoginMenuItem() {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            launchAtLoginMenuItem.title = "Launch at Login"
+            launchAtLoginMenuItem.state = .on
+        case .requiresApproval:
+            launchAtLoginMenuItem.title = "Launch at Login: Needs Approval"
+            launchAtLoginMenuItem.state = .off
+        case .notRegistered:
+            launchAtLoginMenuItem.title = "Launch at Login"
+            launchAtLoginMenuItem.state = .off
+        case .notFound:
+            launchAtLoginMenuItem.title = "Launch at Login: Unavailable"
+            launchAtLoginMenuItem.state = .off
+        @unknown default:
+            launchAtLoginMenuItem.title = "Launch at Login: Unknown"
+            launchAtLoginMenuItem.state = .off
+        }
+    }
+
+    private func launchAtLoginSummaryTitle() -> String {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            "Launch at Login: On"
+        case .requiresApproval:
+            "Launch at Login: Needs Approval"
+        case .notRegistered:
+            "Launch at Login: Off"
+        case .notFound:
+            "Launch at Login: Unavailable"
+        @unknown default:
+            "Launch at Login: Unknown"
+        }
+    }
+
+    private func refreshLastTranscriptPreview() {
+        guard !lastTranscript.isEmpty else {
+            lastTranscriptPreviewMenuItem.title = "Last: None"
+            return
+        }
+
+        lastTranscriptPreviewMenuItem.title = "Last: \(truncatedTranscriptPreview(lastTranscript))"
+    }
+
+    private func truncatedTranscriptPreview(_ transcript: String) -> String {
+        let maxLength = 72
+        guard transcript.count > maxLength else {
+            return transcript
+        }
+
+        return String(transcript.prefix(maxLength - 3)) + "..."
+    }
+
+    private func showTransientStatus(_ title: String) {
+        guard case .idle = state else {
+            return
+        }
+
+        let token = UUID()
+        transientStatusToken = token
+        statusMenuItem.title = title
+        statusItem?.button?.toolTip = "Glyph: \(title)"
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard transientStatusToken == token, case .idle = state else {
+                return
+            }
+
+            transientStatusToken = nil
+            updateStatus()
+        }
     }
 
     private func installModifierHoldMonitors() {
@@ -312,10 +472,8 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             recorder.record()
             self.recorder = recorder
             recordingStartedAt = Date()
-            recordingPeakPower = -160
-            recordingAveragePower = -160
-            startRecordingMeterTimer()
             state = .recording
+            startWaveformHUD()
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -328,14 +486,13 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         }
 
         let audioURL = recorder.url
-        sampleRecordingMeters()
         let recorderDuration = recorder.currentTime
         let wallClockDuration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         let duration = max(recorderDuration, wallClockDuration)
         recorder.stop()
         self.recorder = nil
         recordingStartedAt = nil
-        stopRecordingMeterTimer()
+        stopWaveformHUD()
 
         guard duration >= 0.35 else {
             removeTemporaryRecording(audioURL)
@@ -362,9 +519,11 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             }.value
 
             lastTranscript = transcript
+            refreshLastTranscriptPreview()
             do {
                 try await injectIntoGhostty(transcript)
                 state = .idle
+                showTransientStatus(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
             } catch {
                 state = .error(error.localizedDescription)
             }
@@ -377,6 +536,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         do {
             try await injectIntoGhostty(lastTranscript)
             state = .idle
+            showTransientStatus(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
         } catch {
             state = .error(error.localizedDescription)
         }
@@ -384,8 +544,9 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func injectIntoGhostty(_ text: String) async throws {
         state = .injecting
+        let shouldSubmit = autoSubmitEnabled
         try await Task.detached(priority: .userInitiated) {
-            try GhosttyInjector().inject(text)
+            try GhosttyInjector().inject(text, submit: shouldSubmit)
         }.value
     }
 
@@ -410,6 +571,30 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startWaveformHUD() {
+        waveformTimer?.invalidate()
+        waveformHUD.show()
+        if let recorder {
+            waveformHUD.update(from: recorder)
+        }
+
+        waveformTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let recorder = self.recorder else {
+                    return
+                }
+
+                self.waveformHUD.update(from: recorder)
+            }
+        }
+    }
+
+    private func stopWaveformHUD() {
+        waveformTimer?.invalidate()
+        waveformTimer = nil
+        waveformHUD.hide()
+    }
+
     private func nextRecordingURL() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("Glyph", isDirectory: true)
@@ -429,49 +614,20 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         ]
     }
 
-    private func startRecordingMeterTimer() {
-        recordingMeterTimer?.invalidate()
-        recordingMeterTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.sampleRecordingMeters()
-            }
-        }
-    }
-
-    private func stopRecordingMeterTimer() {
-        recordingMeterTimer?.invalidate()
-        recordingMeterTimer = nil
-    }
-
-    private func sampleRecordingMeters() {
-        guard let recorder else {
-            return
-        }
-
-        recorder.updateMeters()
-        recordingPeakPower = max(recordingPeakPower, recorder.peakPower(forChannel: 0))
-        recordingAveragePower = max(recordingAveragePower, recorder.averagePower(forChannel: 0))
-        refreshRecordingPresentation()
-    }
-
-    private func refreshRecordingPresentation() {
-        let elapsed = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-        statusMenuItem.title = "Recording \(formatDuration(elapsed))"
-        statusItem?.button?.toolTip = "Glyph: Recording \(formatDuration(elapsed))"
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let clampedSeconds = max(0, Int(seconds.rounded(.down)))
-        return String(format: "%d:%02d", clampedSeconds / 60, clampedSeconds % 60)
-    }
-
     private func removeTemporaryRecording(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
 }
 
 private enum GlyphMenuBarIcon {
-    static func makeImage() -> NSImage {
+    enum Style {
+        case idle
+        case recording
+        case transcribing
+        case error
+    }
+
+    static func makeImage(style: Style) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
 
@@ -491,10 +647,34 @@ private enum GlyphMenuBarIcon {
         NSColor.black.setFill()
         badge.fill()
 
-        drawCutoutLine(from: NSPoint(x: 6.6, y: 5.1), to: NSPoint(x: 11.5, y: 9), lineWidth: 2.5)
-        drawCutoutLine(from: NSPoint(x: 11.5, y: 9), to: NSPoint(x: 6.6, y: 12.9), lineWidth: 2.5)
+        switch style {
+        case .idle:
+            drawCutoutLine(from: NSPoint(x: 6.6, y: 5.1), to: NSPoint(x: 11.5, y: 9), lineWidth: 2.5)
+            drawCutoutLine(from: NSPoint(x: 11.5, y: 9), to: NSPoint(x: 6.6, y: 12.9), lineWidth: 2.5)
+        case .recording:
+            drawCutoutCircle(center: NSPoint(x: 9, y: 9), radius: 3.2)
+        case .transcribing:
+            drawCutoutLine(from: NSPoint(x: 5.2, y: 6.3), to: NSPoint(x: 12.8, y: 6.3), lineWidth: 2.1)
+            drawCutoutLine(from: NSPoint(x: 5.2, y: 9), to: NSPoint(x: 12.8, y: 9), lineWidth: 2.1)
+            drawCutoutLine(from: NSPoint(x: 5.2, y: 11.7), to: NSPoint(x: 12.8, y: 11.7), lineWidth: 2.1)
+        case .error:
+            drawCutoutLine(from: NSPoint(x: 9, y: 5.4), to: NSPoint(x: 9, y: 10.5), lineWidth: 2.3)
+            drawCutoutCircle(center: NSPoint(x: 9, y: 13), radius: 1.2)
+        }
 
         return image
+    }
+
+    private static func drawCutoutCircle(center: NSPoint, radius: CGFloat) {
+        let path = NSBezierPath(
+            ovalIn: NSRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+        )
+        cutout(path)
     }
 
     private static func drawCutoutLine(from start: NSPoint, to end: NSPoint, lineWidth: CGFloat) {
@@ -504,11 +684,62 @@ private enum GlyphMenuBarIcon {
         path.lineJoinStyle = .round
         path.move(to: start)
         path.line(to: end)
+        cutout(path)
+    }
 
+    private static func cutout(_ path: NSBezierPath) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.compositingOperation = .destinationOut
-        NSColor.black.setStroke()
+        NSColor.black.set()
+        path.fill()
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
+private struct PermissionStatus {
+    var shortcutAllowed: Bool
+    var microphoneAllowed: Bool
+    var microphoneTitle: String
+
+    var shortcutTitle: String {
+        shortcutAllowed ? "Shortcut: Allowed" : "Shortcut: Missing"
+    }
+
+    var summaryTitle: String {
+        if shortcutAllowed && microphoneAllowed {
+            return "Permissions: Allowed"
+        }
+
+        return "\(shortcutTitle), \(microphoneTitle)"
+    }
+
+    static func current(shortcutAllowed: Bool) -> PermissionStatus {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            PermissionStatus(
+                shortcutAllowed: shortcutAllowed,
+                microphoneAllowed: true,
+                microphoneTitle: "Microphone: Allowed"
+            )
+        case .undetermined:
+            PermissionStatus(
+                shortcutAllowed: shortcutAllowed,
+                microphoneAllowed: false,
+                microphoneTitle: "Microphone: Not Requested"
+            )
+        case .denied:
+            PermissionStatus(
+                shortcutAllowed: shortcutAllowed,
+                microphoneAllowed: false,
+                microphoneTitle: "Microphone: Missing"
+            )
+        @unknown default:
+            PermissionStatus(
+                shortcutAllowed: shortcutAllowed,
+                microphoneAllowed: false,
+                microphoneTitle: "Microphone: Unknown"
+            )
+        }
     }
 }

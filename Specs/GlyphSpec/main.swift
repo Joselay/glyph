@@ -79,7 +79,7 @@ expect(whisperArguments.contains("en"), "whisper arguments should force English 
 expect(whisperArguments.contains("--suppress-nst"), "whisper arguments should suppress non-speech tokens")
 
 let injectedText = #"say "hello codex""#
-let ghosttyEvent = GhosttyInjector.eventDescriptor(for: injectedText)
+let ghosttyEvent = GhosttyInjector.eventDescriptor(for: injectedText, submit: true)
 let ghosttyParameters = ghosttyEvent.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))
 
 expect(
@@ -89,6 +89,10 @@ expect(
 expect(
     GhosttyInjector.scriptSource.contains("focused terminal of selected tab of front window"),
     "ghostty injection should target the focused Ghostty terminal"
+)
+expect(
+    GhosttyInjector.scriptSource.contains("key code 36"),
+    "auto-submit should send a real Return key event instead of transcript newline text"
 )
 expect(
     !GhosttyInjector.scriptSource.contains(injectedText),
@@ -101,6 +105,10 @@ expect(
 expect(
     ghosttyParameters?.atIndex(1)?.stringValue == injectedText,
     "ghostty injection should pass transcript as an Apple event parameter"
+)
+expect(
+    ghosttyParameters?.atIndex(2)?.booleanValue == true,
+    "ghostty injection should pass submit mode as an Apple event parameter"
 )
 
 let rawTranscript = """
