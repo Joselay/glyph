@@ -78,7 +78,7 @@ final class RecordingWaveformHUD {
         let size = panel.frame.size
         let origin = NSPoint(
             x: screenFrame.midX - size.width / 2,
-            y: screenFrame.maxY - size.height - 52
+            y: screenFrame.minY + 52
         )
         panel.setFrameOrigin(origin)
     }
