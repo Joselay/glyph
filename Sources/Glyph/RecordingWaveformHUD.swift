@@ -55,11 +55,8 @@ final class RecordingWaveformHUD {
         showPanel()
     }
 
-    func showResult(_ title: String) {
-        position()
-        waveformView.setResultPattern()
-        waveformView.phase = .result(title)
-        showPanel()
+    func advanceAnimation() {
+        waveformView.advanceAnimation()
     }
 
     func showError(_ title: String) {
@@ -99,15 +96,9 @@ final class RecordingWaveformHUD {
             return
         }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.10
-            panel.animator().alphaValue = 0
-        } completionHandler: {
-            Task { @MainActor in
-                self.panel.orderOut(nil)
-                self.waveformView.reset()
-            }
-        }
+        panel.alphaValue = 0
+        panel.orderOut(nil)
+        waveformView.reset()
     }
 
     private func position() {
@@ -125,7 +116,6 @@ private final class RecordingWaveformView: NSView {
     enum Phase {
         case recording
         case transcribing
-        case result(String)
         case error(String)
     }
 
@@ -133,6 +123,7 @@ private final class RecordingWaveformView: NSView {
     private var levels = Array(repeating: CGFloat(0.05), count: barCount)
     private var smoothedLevel: CGFloat = 0.05
     private var nextLevelIndex = 0
+    private var processingFrame = 0
     var phase = Phase.recording {
         didSet {
             needsDisplay = true
@@ -147,6 +138,7 @@ private final class RecordingWaveformView: NSView {
         levels = Array(repeating: CGFloat(0.05), count: Self.barCount)
         smoothedLevel = 0.05
         nextLevelIndex = 0
+        processingFrame = 0
         phase = .recording
         needsDisplay = true
     }
@@ -162,18 +154,27 @@ private final class RecordingWaveformView: NSView {
     }
 
     func setProcessingPattern() {
-        levels = levels.indices.map { index in
-            let progress = CGFloat(index) / CGFloat(max(1, levels.count - 1))
-            return 0.24 + 0.42 * abs(sin(progress * .pi * 2.4))
-        }
-        nextLevelIndex = 0
-        needsDisplay = true
+        processingFrame = 0
+        updateProcessingPattern()
     }
 
-    func setResultPattern() {
+    func advanceAnimation() {
+        switch phase {
+        case .recording:
+            return
+        case .transcribing, .error:
+            processingFrame += 1
+            updateProcessingPattern()
+        }
+    }
+
+    private func updateProcessingPattern() {
+        let frameOffset = CGFloat(processingFrame) * 0.28
         levels = levels.indices.map { index in
             let progress = CGFloat(index) / CGFloat(max(1, levels.count - 1))
-            return 0.18 + 0.32 * sin(progress * .pi)
+            let primaryWave = abs(sin(progress * .pi * 2.4 + frameOffset))
+            let secondaryWave = abs(sin(progress * .pi * 5.2 - frameOffset * 0.72))
+            return 0.18 + 0.34 * primaryWave + 0.16 * secondaryWave
         }
         nextLevelIndex = 0
         needsDisplay = true
@@ -214,8 +215,6 @@ private final class RecordingWaveformView: NSView {
             ("Recording", NSColor(calibratedRed: 0.46, green: 0.92, blue: 0.63, alpha: 1))
         case .transcribing:
             ("Transcribing", NSColor(calibratedRed: 0.46, green: 0.72, blue: 1.00, alpha: 1))
-        case .result(let title):
-            (title, NSColor(calibratedRed: 0.58, green: 0.94, blue: 0.74, alpha: 1))
         case .error(let title):
             (title, NSColor(calibratedRed: 1.00, green: 0.42, blue: 0.42, alpha: 1))
         }
@@ -249,8 +248,6 @@ private final class RecordingWaveformView: NSView {
             NSColor(calibratedRed: 0.50, green: 0.76, blue: 1.00, alpha: 1)
         case .transcribing:
             NSColor(calibratedRed: 0.70, green: 0.58, blue: 1.00, alpha: 1)
-        case .result:
-            NSColor(calibratedRed: 0.56, green: 0.92, blue: 0.72, alpha: 1)
         case .error:
             NSColor(calibratedRed: 1.00, green: 0.48, blue: 0.48, alpha: 1)
         }

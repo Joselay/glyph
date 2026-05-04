@@ -6,7 +6,7 @@
 
 Glyph is a lightweight native macOS menu bar utility for dictating into Codex CLI running in Ghostty.
 
-It intentionally has no main window. The menu bar item exposes runtime status, a recording-only waveform HUD, a short last-transcript preview, recovery actions, permission checks, launch-at-login, auto-submit, and quit.
+It intentionally has no main window. The menu bar item exposes runtime status, a recording-only waveform HUD, a short last-transcript preview, recovery actions, permissions, launch-at-login, auto-submit, and quit.
 
 ## Requirements
 
@@ -28,15 +28,15 @@ It intentionally has no main window. The menu bar item exposes runtime status, a
 
 On first run, macOS may ask for Microphone, Accessibility, and Automation permission. Accessibility is used for the global hold-to-record trigger. Automation is used to send the transcript from Glyph to Ghostty.
 
-The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies. Its waveform meter runs only while recording and stops immediately on release.
-Glyph keeps runtime work short: the waveform timer is idle unless recording, Ghostty injection reuses a compiled AppleScript, and `whisper.cpp` runs with low-latency decoder settings for short developer dictation.
+The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies. Its waveform meter reads microphone levels only while recording, then switches to a lightweight processing animation only while transcription or sending is still active.
+Glyph keeps runtime work short: the waveform timer is idle unless recording, transcribing, or sending, Ghostty injection reuses a compiled AppleScript, and `whisper.cpp` runs with low-latency decoder settings for short developer dictation.
 
 ## Menu
 
 - `Auto-submit` is off by default. When enabled, Glyph sends Return after the transcript so Codex CLI submits immediately.
 - `Launch at Login` uses macOS's native login item service.
 - `Copy Last Transcript` and `Send Last Transcript` show short status feedback in the menu after they run.
-- Permission rows stay visible for Accessibility shortcut access and Microphone access, with direct shortcuts to both macOS settings panes.
+- `Permissions` opens the setup panel when Microphone or Accessibility access is missing.
 
 ## Privacy
 
