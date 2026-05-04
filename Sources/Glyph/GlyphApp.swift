@@ -592,7 +592,6 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         do {
             let url = try nextRecordingURL()
             let recorder = try AVAudioRecorder(url: url, settings: audioSettings())
-            recorder.isMeteringEnabled = true
             recorder.prepareToRecord()
             recorder.record()
             self.recorder = recorder
@@ -714,10 +713,6 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func startWaveformHUD() {
         waveformTimer?.invalidate()
         waveformHUD.showRecording()
-        if let recorder {
-            waveformHUD.update(from: recorder)
-        }
-
         startWaveformTimer()
     }
 
@@ -729,26 +724,20 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func startWaveformTimer() {
         let timer = Timer(
-            timeInterval: 1.0 / 24.0,
+            timeInterval: 1.0 / 30.0,
             target: self,
             selector: #selector(updateWaveformFromTimer),
             userInfo: nil,
             repeats: true
         )
-        timer.tolerance = 0.01
+        timer.tolerance = 0.006
         RunLoop.main.add(timer, forMode: .common)
         waveformTimer = timer
     }
 
     @objc private func updateWaveformFromTimer(_ timer: Timer) {
         switch state {
-        case .recording:
-            guard let recorder else {
-                return
-            }
-
-            waveformHUD.update(from: recorder)
-        case .transcribing, .injecting:
+        case .recording, .transcribing, .injecting:
             waveformHUD.advanceAnimation()
         case .idle, .error:
             break

@@ -1,5 +1,4 @@
 import AppKit
-import AVFAudio
 
 @MainActor
 final class RecordingWaveformHUD {
@@ -43,7 +42,7 @@ final class RecordingWaveformHUD {
 
     func showRecording() {
         position()
-        waveformView.reset()
+        waveformView.setProcessingPattern()
         waveformView.phase = .recording
         showPanel()
     }
@@ -83,14 +82,6 @@ final class RecordingWaveformHUD {
         }
     }
 
-    func update(from recorder: AVAudioRecorder) {
-        recorder.updateMeters()
-        waveformView.push(
-            averagePower: recorder.averagePower(forChannel: 0),
-            peakPower: recorder.peakPower(forChannel: 0)
-        )
-    }
-
     func hide() {
         guard panel.isVisible else {
             return
@@ -120,9 +111,7 @@ private final class RecordingWaveformView: NSView {
     }
 
     private static let barCount = 36
-    private var levels = Array(repeating: CGFloat(0.05), count: barCount)
-    private var smoothedLevel: CGFloat = 0.05
-    private var nextLevelIndex = 0
+    private var levels = Array(repeating: CGFloat(0.18), count: barCount)
     private var processingFrame = 0
     var phase = Phase.recording {
         didSet {
@@ -135,21 +124,9 @@ private final class RecordingWaveformView: NSView {
     }
 
     func reset() {
-        levels = Array(repeating: CGFloat(0.05), count: Self.barCount)
-        smoothedLevel = 0.05
-        nextLevelIndex = 0
+        levels = Array(repeating: CGFloat(0.18), count: Self.barCount)
         processingFrame = 0
         phase = .recording
-        needsDisplay = true
-    }
-
-    func push(averagePower: Float, peakPower: Float) {
-        let average = normalizedPower(averagePower)
-        let peak = normalizedPower(peakPower)
-        let target = max(0.05, min(1, average * 0.62 + peak * 0.38))
-        smoothedLevel = smoothedLevel * 0.62 + target * 0.38
-        levels[nextLevelIndex] = smoothedLevel
-        nextLevelIndex = (nextLevelIndex + 1) % levels.count
         needsDisplay = true
     }
 
@@ -160,9 +137,7 @@ private final class RecordingWaveformView: NSView {
 
     func advanceAnimation() {
         switch phase {
-        case .recording:
-            return
-        case .transcribing, .error:
+        case .recording, .transcribing, .error:
             processingFrame += 1
             updateProcessingPattern()
         }
@@ -170,19 +145,17 @@ private final class RecordingWaveformView: NSView {
 
     private func updateProcessingPattern() {
         let frameOffset = CGFloat(processingFrame) * 0.28
-        levels = levels.indices.map { index in
+        for index in levels.indices {
             let progress = CGFloat(index) / CGFloat(max(1, levels.count - 1))
             let primaryWave = abs(sin(progress * .pi * 2.4 + frameOffset))
             let secondaryWave = abs(sin(progress * .pi * 5.2 - frameOffset * 0.72))
-            return 0.18 + 0.34 * primaryWave + 0.16 * secondaryWave
+            levels[index] = 0.18 + 0.34 * primaryWave + 0.16 * secondaryWave
         }
-        nextLevelIndex = 0
         needsDisplay = true
     }
 
     func setErrorPattern() {
         levels = Array(repeating: CGFloat(0.22), count: Self.barCount)
-        nextLevelIndex = 0
         needsDisplay = true
     }
 
@@ -228,10 +201,10 @@ private final class RecordingWaveformView: NSView {
         let color = waveformColor
 
         for index in levels.indices {
-            let level = levels[(nextLevelIndex + index) % levels.count]
+            let level = levels[index]
             let x = rect.minX + CGFloat(index) * (barWidth + gap)
-            let shaped = pow(level, 0.64)
-            let height = max(6, maxHeight * shaped)
+            let shaped = pow(level, 0.62)
+            let height = max(8, maxHeight * shaped)
             let barRect = NSRect(x: x, y: centerY - height / 2, width: barWidth, height: height)
             let path = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
 
@@ -253,12 +226,4 @@ private final class RecordingWaveformView: NSView {
         }
     }
 
-    private func normalizedPower(_ power: Float) -> CGFloat {
-        guard power.isFinite else {
-            return 0
-        }
-
-        let clamped = max(-58, min(0, power))
-        return CGFloat((clamped + 58) / 58)
-    }
 }
