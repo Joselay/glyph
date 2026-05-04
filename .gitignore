@@ -1,0 +1,14 @@
+.build/
+build/
+.swiftpm/
+.DS_Store
+*.xcuserdata/
+*.xcuserstate
+DerivedData/
+.env
+.env.*
+!.env.example
+*.log
+*.wav
+*.m4a
+*.mp3
