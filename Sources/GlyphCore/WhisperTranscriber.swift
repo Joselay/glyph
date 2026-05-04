@@ -47,9 +47,9 @@ public struct WhisperTranscriber: Sendable {
         process.standardOutput = stdout.pipe
         process.standardError = stderr.pipe
 
-        try process.run()
         stdout.startReading()
         stderr.startReading()
+        try process.run()
         process.waitUntilExit()
 
         let output = stdout.stringValue()

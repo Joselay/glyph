@@ -89,7 +89,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private let recordingStatusIcon = GlyphMenuBarIcon.makeImage(style: .recording)
     private let transcribingStatusIcon = GlyphMenuBarIcon.makeImage(style: .transcribing)
     private let errorStatusIcon = GlyphMenuBarIcon.makeImage(style: .error)
-    private let waveformHUD = RecordingWaveformHUD()
+    private var waveformHUD: RecordingWaveformHUD?
     private var sendLastMenuItem = NSMenuItem()
     private var copyLastMenuItem = NSMenuItem()
     private var lastTranscriptPreviewMenuItem = NSMenuItem()
@@ -130,6 +130,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         installModifierHoldMonitors()
         let permissions = requestAccessibilityIfNeeded()
         showPermissionOnboardingIfNeeded(permissions)
+        prewarmGhosttyInjector()
         state = .idle
     }
 
@@ -538,7 +539,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             state = .idle
         case .ready(let audioURL):
             state = .transcribing
-            waveformHUD.showTranscribing()
+            activeWaveformHUD().showTranscribing()
 
             Task {
                 await transcribeAndInject(audioURL)
@@ -590,7 +591,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func showOperationFailure(_ error: Error, hudTitle: String) {
         stopWaveformTimer()
         state = .error(error.localizedDescription)
-        waveformHUD.showError(hudTitle)
+        activeWaveformHUD().showError(hudTitle)
         hideHUDLater()
     }
 
@@ -626,14 +627,24 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func startWaveformHUD() {
         waveformTimer?.invalidate()
-        waveformHUD.showRecording()
+        activeWaveformHUD().showRecording()
         startWaveformTimer()
     }
 
     private func startWaveformProcessingHUD() {
         waveformTimer?.invalidate()
-        waveformHUD.showTranscribing()
+        activeWaveformHUD().showTranscribing()
         startWaveformTimer()
+    }
+
+    private func activeWaveformHUD() -> RecordingWaveformHUD {
+        if let waveformHUD {
+            return waveformHUD
+        }
+
+        let waveformHUD = RecordingWaveformHUD()
+        self.waveformHUD = waveformHUD
+        return waveformHUD
     }
 
     private func startWaveformTimer() {
@@ -652,7 +663,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     @objc private func updateWaveformFromTimer(_ timer: Timer) {
         switch state {
         case .recording, .transcribing, .injecting:
-            waveformHUD.advanceAnimation()
+            waveformHUD?.advanceAnimation()
         case .idle, .error:
             break
         }
@@ -661,7 +672,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func stopWaveformHUD() {
         waveformTimer?.invalidate()
         waveformTimer = nil
-        waveformHUD.hide()
+        waveformHUD?.hide()
     }
 
     private func stopWaveformTimer() {
@@ -673,6 +684,13 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.1))
             stopWaveformHUD()
+        }
+    }
+
+    private func prewarmGhosttyInjector() {
+        let injector = ghosttyInjector
+        Task.detached(priority: .utility) {
+            try? injector.prepare()
         }
     }
 

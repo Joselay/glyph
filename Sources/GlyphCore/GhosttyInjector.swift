@@ -42,6 +42,15 @@ public final class GhosttyInjector: @unchecked Sendable {
 
     public init() {}
 
+    public func prepare() throws {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        _ = try script()
+    }
+
     public func inject(_ text: String, submit: Bool = false) throws {
         lock.lock()
         defer {

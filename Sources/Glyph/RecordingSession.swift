@@ -18,11 +18,15 @@ final class RecordingSession {
     }
 
     private let fileManager: FileManager
+    private let directory: URL
     private var recorder: AVAudioRecorder?
     private var startedAt: TimeInterval?
+    private var isDirectoryReady = false
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
+        self.directory = fileManager.temporaryDirectory
+            .appendingPathComponent("Glyph", isDirectory: true)
     }
 
     @discardableResult
@@ -75,10 +79,11 @@ final class RecordingSession {
     }
 
     private func nextRecordingURL() throws -> URL {
-        let directory = fileManager.temporaryDirectory
-            .appendingPathComponent("Glyph", isDirectory: true)
+        if !isDirectoryReady {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            isDirectoryReady = true
+        }
 
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("recording-\(UUID().uuidString).wav")
     }
 }

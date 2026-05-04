@@ -6,6 +6,9 @@ let iconsetDirectory = outputDirectory.appendingPathComponent("AppIcon.iconset",
 let iconFile = outputDirectory.appendingPathComponent("AppIcon.icns")
 
 let fileManager = FileManager.default
+if fileManager.fileExists(atPath: iconsetDirectory.path) {
+    try fileManager.removeItem(at: iconsetDirectory)
+}
 try fileManager.createDirectory(at: iconsetDirectory, withIntermediateDirectories: true)
 
 let iconEntries: [(name: String, pixels: CGFloat)] = [
