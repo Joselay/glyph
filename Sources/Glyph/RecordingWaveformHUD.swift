@@ -28,8 +28,7 @@ final class RecordingWaveformHUD {
         containerView.layer?.backgroundColor = NSColor(calibratedWhite: 0.06, alpha: 0.94).cgColor
         containerView.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.12).cgColor
         containerView.layer?.borderWidth = 1
-        containerView.layer?.cornerRadius = frame.height / 2
-        containerView.layer?.cornerCurve = .continuous
+        containerView.layer?.cornerRadius = 16
         containerView.layer?.masksToBounds = true
 
         waveformView.frame = containerView.bounds
