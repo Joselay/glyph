@@ -73,10 +73,11 @@ private enum GlyphAppIconRenderer {
         NSColor.clear.setFill()
         bounds.fill()
 
+        let isSmallIcon = pixels <= 64
         let shadow = NSShadow()
-        shadow.shadowBlurRadius = pixels * 0.035
-        shadow.shadowOffset = NSSize(width: 0, height: -pixels * 0.012)
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.18)
+        shadow.shadowBlurRadius = isSmallIcon ? 0 : pixels * 0.035
+        shadow.shadowOffset = isSmallIcon ? .zero : NSSize(width: 0, height: -pixels * 0.012)
+        shadow.shadowColor = isSmallIcon ? nil : NSColor.black.withAlphaComponent(0.18)
         shadow.set()
 
         let badgeInset = pixels * 0.055
@@ -92,55 +93,67 @@ private enum GlyphAppIconRenderer {
         )
         gradient?.draw(in: badge, angle: 90)
 
-        NSColor(calibratedWhite: 1, alpha: 0.12).setStroke()
-        badge.lineWidth = max(1, pixels * 0.01)
-        badge.stroke()
+        if !isSmallIcon {
+            NSColor(calibratedWhite: 1, alpha: 0.08).setStroke()
+            badge.lineWidth = max(1, pixels * 0.008)
+            badge.stroke()
+        }
 
         shadow.shadowColor = nil
         shadow.set()
-        NSColor(calibratedWhite: 1, alpha: 0.96).setStroke()
+        shadow.shadowBlurRadius = isSmallIcon ? 0 : pixels * 0.025
+        shadow.shadowOffset = isSmallIcon ? .zero : NSSize(width: 0, height: -pixels * 0.006)
+        shadow.shadowColor = isSmallIcon ? nil : NSColor.black.withAlphaComponent(0.22)
+        shadow.set()
 
-        let center = pixels * 0.5
-        let leftX = pixels * 0.35
-        let rightX = pixels * 0.67
-        let topY = pixels * 0.69
-        let bottomY = pixels * 0.31
-        let lineWidth = max(2, pixels * 0.13)
+        let centerY = pixels * 0.5
+        let barWidth = max(isSmallIcon ? 1.5 : 2, pixels * 0.083)
+        let bars: [(x: CGFloat, height: CGFloat, color: NSColor)] = if isSmallIcon {
+            [
+                (0.21, 0.26, NSColor(calibratedWhite: 1, alpha: 0.90)),
+                (0.36, 0.47, NSColor(calibratedWhite: 1, alpha: 0.98)),
+                (0.50, 0.59, NSColor(calibratedRed: 0.36, green: 0.78, blue: 0.94, alpha: 1)),
+                (0.64, 0.41, NSColor(calibratedWhite: 1, alpha: 0.98)),
+                (0.79, 0.23, NSColor(calibratedWhite: 1, alpha: 0.90))
+            ]
+        } else {
+            [
+                (0.21, 0.26, NSColor(calibratedWhite: 1, alpha: 0.90)),
+                (0.36, 0.47, NSColor(calibratedWhite: 1, alpha: 0.98)),
+                (0.50, 0.59, NSColor(calibratedRed: 0.36, green: 0.78, blue: 0.94, alpha: 1)),
+                (0.64, 0.41, NSColor(calibratedWhite: 1, alpha: 0.98)),
+                (0.79, 0.23, NSColor(calibratedWhite: 1, alpha: 0.90))
+            ]
+        }
 
-        drawLine(
-            from: NSPoint(x: leftX, y: bottomY),
-            to: NSPoint(x: rightX, y: center),
-            lineWidth: lineWidth
-        )
-        drawLine(
-            from: NSPoint(x: rightX, y: center),
-            to: NSPoint(x: leftX, y: topY),
-            lineWidth: lineWidth
-        )
-
-        NSColor(calibratedRed: 0.42, green: 0.74, blue: 1.00, alpha: 1).setStroke()
-        let waveLineWidth = max(1.5, pixels * 0.035)
-        drawLine(
-            from: NSPoint(x: pixels * 0.38, y: pixels * 0.23),
-            to: NSPoint(x: pixels * 0.46, y: pixels * 0.26),
-            lineWidth: waveLineWidth
-        )
-        drawLine(
-            from: NSPoint(x: pixels * 0.51, y: pixels * 0.24),
-            to: NSPoint(x: pixels * 0.61, y: pixels * 0.29),
-            lineWidth: waveLineWidth
-        )
+        for bar in bars {
+            drawRoundedBar(
+                centerX: pixels * bar.x,
+                centerY: centerY,
+                width: barWidth,
+                height: max(barWidth, pixels * bar.height),
+                color: bar.color
+            )
+        }
 
         return image
     }
 
-    private static func drawLine(from start: NSPoint, to end: NSPoint, lineWidth: CGFloat) {
-        let path = NSBezierPath()
-        path.lineWidth = lineWidth
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        path.move(to: start)
-        path.line(to: end)
-        path.stroke()
+    private static func drawRoundedBar(
+        centerX: CGFloat,
+        centerY: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        color: NSColor
+    ) {
+        let rect = NSRect(
+            x: centerX - width / 2,
+            y: centerY - height / 2,
+            width: width,
+            height: height
+        )
+        let path = NSBezierPath(roundedRect: rect, xRadius: width / 2, yRadius: width / 2)
+        color.setFill()
+        path.fill()
     }
 }

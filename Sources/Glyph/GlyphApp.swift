@@ -787,35 +787,31 @@ private enum GlyphMenuBarIcon {
             image.isTemplate = true
         }
 
-        NSColor.black.setStroke()
-
-        let badge = NSBezierPath(
-            roundedRect: NSRect(x: 1.25, y: 1.25, width: 15.5, height: 15.5),
-            xRadius: 3.8,
-            yRadius: 3.8
-        )
         NSColor.black.setFill()
-        badge.fill()
+        NSColor.black.setStroke()
 
         switch style {
         case .idle:
-            drawCutoutLine(from: NSPoint(x: 6.6, y: 5.1), to: NSPoint(x: 11.5, y: 9), lineWidth: 2.5)
-            drawCutoutLine(from: NSPoint(x: 11.5, y: 9), to: NSPoint(x: 6.6, y: 12.9), lineWidth: 2.5)
+            drawLine(from: NSPoint(x: 3.8, y: 6.7), to: NSPoint(x: 3.8, y: 11.3), lineWidth: 1.8)
+            drawLine(from: NSPoint(x: 6.4, y: 4.8), to: NSPoint(x: 6.4, y: 13.2), lineWidth: 1.8)
+            drawLine(from: NSPoint(x: 9, y: 3.7), to: NSPoint(x: 9, y: 14.3), lineWidth: 1.8)
+            drawLine(from: NSPoint(x: 11.6, y: 5.3), to: NSPoint(x: 11.6, y: 12.7), lineWidth: 1.8)
+            drawLine(from: NSPoint(x: 14.2, y: 6.9), to: NSPoint(x: 14.2, y: 11.1), lineWidth: 1.8)
         case .recording:
-            drawCutoutCircle(center: NSPoint(x: 9, y: 9), radius: 3.2)
+            drawCircle(center: NSPoint(x: 9, y: 9), radius: 3.9)
         case .transcribing:
-            drawCutoutLine(from: NSPoint(x: 5.2, y: 6.3), to: NSPoint(x: 12.8, y: 6.3), lineWidth: 2.1)
-            drawCutoutLine(from: NSPoint(x: 5.2, y: 9), to: NSPoint(x: 12.8, y: 9), lineWidth: 2.1)
-            drawCutoutLine(from: NSPoint(x: 5.2, y: 11.7), to: NSPoint(x: 12.8, y: 11.7), lineWidth: 2.1)
+            drawLine(from: NSPoint(x: 5.2, y: 6.3), to: NSPoint(x: 12.8, y: 6.3), lineWidth: 2.1)
+            drawLine(from: NSPoint(x: 5.2, y: 9), to: NSPoint(x: 12.8, y: 9), lineWidth: 2.1)
+            drawLine(from: NSPoint(x: 5.2, y: 11.7), to: NSPoint(x: 12.8, y: 11.7), lineWidth: 2.1)
         case .error:
-            drawCutoutLine(from: NSPoint(x: 9, y: 5.4), to: NSPoint(x: 9, y: 10.5), lineWidth: 2.3)
-            drawCutoutCircle(center: NSPoint(x: 9, y: 13), radius: 1.2)
+            drawLine(from: NSPoint(x: 9, y: 5.4), to: NSPoint(x: 9, y: 10.5), lineWidth: 2.3)
+            drawCircle(center: NSPoint(x: 9, y: 13), radius: 1.2)
         }
 
         return image
     }
 
-    private static func drawCutoutCircle(center: NSPoint, radius: CGFloat) {
+    private static func drawCircle(center: NSPoint, radius: CGFloat) {
         let path = NSBezierPath(
             ovalIn: NSRect(
                 x: center.x - radius,
@@ -824,26 +820,17 @@ private enum GlyphMenuBarIcon {
                 height: radius * 2
             )
         )
-        cutout(path)
+        path.fill()
     }
 
-    private static func drawCutoutLine(from start: NSPoint, to end: NSPoint, lineWidth: CGFloat) {
+    private static func drawLine(from start: NSPoint, to end: NSPoint, lineWidth: CGFloat) {
         let path = NSBezierPath()
         path.lineWidth = lineWidth
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         path.move(to: start)
         path.line(to: end)
-        cutout(path)
-    }
-
-    private static func cutout(_ path: NSBezierPath) {
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.compositingOperation = .destinationOut
-        NSColor.black.set()
-        path.fill()
         path.stroke()
-        NSGraphicsContext.restoreGraphicsState()
     }
 }
 

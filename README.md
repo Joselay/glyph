@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/glyph-icon.png" alt="Glyph app icon" width="96" height="96">
+</p>
+
 # Glyph
 
 Glyph is a lightweight native macOS menu bar utility for dictating into Codex CLI running in Ghostty.
