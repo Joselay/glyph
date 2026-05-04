@@ -587,14 +587,16 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             waveformHUD.update(from: recorder)
         }
 
-        waveformTimer = Timer.scheduledTimer(
-            timeInterval: 1.0 / 15.0,
+        let timer = Timer(
+            timeInterval: 1.0 / 24.0,
             target: self,
             selector: #selector(updateWaveformFromTimer),
             userInfo: nil,
             repeats: true
         )
-        waveformTimer?.tolerance = 0.02
+        timer.tolerance = 0.01
+        RunLoop.main.add(timer, forMode: .common)
+        waveformTimer = timer
     }
 
     @objc private func updateWaveformFromTimer(_ timer: Timer) {
