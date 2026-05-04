@@ -86,15 +86,19 @@ private enum GlyphAppIconRenderer {
 
         let gradient = NSGradient(
             colors: [
-                NSColor(calibratedRed: 0.40, green: 0.46, blue: 0.96, alpha: 1),
-                NSColor(calibratedRed: 0.18, green: 0.20, blue: 0.42, alpha: 1)
+                NSColor(calibratedRed: 0.13, green: 0.15, blue: 0.20, alpha: 1),
+                NSColor(calibratedRed: 0.04, green: 0.05, blue: 0.07, alpha: 1)
             ]
         )
         gradient?.draw(in: badge, angle: 90)
 
+        NSColor(calibratedWhite: 1, alpha: 0.12).setStroke()
+        badge.lineWidth = max(1, pixels * 0.01)
+        badge.stroke()
+
         shadow.shadowColor = nil
         shadow.set()
-        NSColor.white.setStroke()
+        NSColor(calibratedWhite: 1, alpha: 0.96).setStroke()
 
         let center = pixels * 0.5
         let leftX = pixels * 0.35
@@ -112,6 +116,19 @@ private enum GlyphAppIconRenderer {
             from: NSPoint(x: rightX, y: center),
             to: NSPoint(x: leftX, y: topY),
             lineWidth: lineWidth
+        )
+
+        NSColor(calibratedRed: 0.42, green: 0.74, blue: 1.00, alpha: 1).setStroke()
+        let waveLineWidth = max(1.5, pixels * 0.035)
+        drawLine(
+            from: NSPoint(x: pixels * 0.38, y: pixels * 0.23),
+            to: NSPoint(x: pixels * 0.46, y: pixels * 0.26),
+            lineWidth: waveLineWidth
+        )
+        drawLine(
+            from: NSPoint(x: pixels * 0.51, y: pixels * 0.24),
+            to: NSPoint(x: pixels * 0.61, y: pixels * 0.29),
+            lineWidth: waveLineWidth
         )
 
         return image

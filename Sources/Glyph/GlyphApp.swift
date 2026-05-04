@@ -20,6 +20,7 @@ struct GlyphMain {
 final class GlyphApp: NSObject, NSApplicationDelegate {
     private static let rightOptionKeyCode: UInt16 = 61
     private static let autoSubmitDefaultsKey = "autoSubmitEnabled"
+    private static let permissionOnboardingShownDefaultsKey = "permissionOnboardingShown"
     private static let audioRecordingSettings: [String: Any] = [
         AVFormatIDKey: Int(kAudioFormatLinearPCM),
         AVSampleRateKey: 16_000,
@@ -53,6 +54,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private var shortcutAccessMenuItem = NSMenuItem()
     private var microphoneAccessMenuItem = NSMenuItem()
     private var statusMenuItem = NSMenuItem()
+    private var permissionPanel: NSPanel?
     private var eventMonitors: [Any] = []
     private var isRecordingChordDown = false
     private var recorder: AVAudioRecorder?
@@ -79,7 +81,8 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureStatusItem()
         installModifierHoldMonitors()
-        requestAccessibilityIfNeeded()
+        let permissions = requestAccessibilityIfNeeded()
+        showPermissionOnboardingIfNeeded(permissions)
         state = .idle
     }
 
@@ -160,12 +163,13 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = ""
         statusItem?.button?.toolTip = "Glyph"
 
-        let menu = NSMenu()
+        let menu = NSMenu(title: "Glyph")
 
         statusMenuItem = NSMenuItem(title: "Ready. Hold Right Option.", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
 
         lastTranscriptPreviewMenuItem = NSMenuItem(title: "Last: None", action: nil, keyEquivalent: "")
+        lastTranscriptPreviewMenuItem.image = MenuIcon.system("text.quote")
         lastTranscriptPreviewMenuItem.isEnabled = false
 
         sendLastMenuItem = NSMenuItem(
@@ -174,6 +178,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         sendLastMenuItem.target = self
+        sendLastMenuItem.image = MenuIcon.system("paperplane")
         sendLastMenuItem.isEnabled = false
 
         copyLastMenuItem = NSMenuItem(
@@ -182,6 +187,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         copyLastMenuItem.target = self
+        copyLastMenuItem.image = MenuIcon.system("doc.on.doc")
         copyLastMenuItem.isEnabled = false
 
         autoSubmitMenuItem = NSMenuItem(
@@ -190,6 +196,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         autoSubmitMenuItem.target = self
+        autoSubmitMenuItem.image = MenuIcon.system("return")
 
         launchAtLoginMenuItem = NSMenuItem(
             title: "Launch at Login",
@@ -197,12 +204,14 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         launchAtLoginMenuItem.target = self
+        launchAtLoginMenuItem.image = MenuIcon.system("power")
 
         shortcutAccessMenuItem = NSMenuItem(
             title: "Shortcut: Checking",
             action: nil,
             keyEquivalent: ""
         )
+        shortcutAccessMenuItem.image = MenuIcon.system("keyboard")
         shortcutAccessMenuItem.isEnabled = false
 
         microphoneAccessMenuItem = NSMenuItem(
@@ -210,6 +219,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             action: nil,
             keyEquivalent: ""
         )
+        microphoneAccessMenuItem.image = MenuIcon.system("mic")
         microphoneAccessMenuItem.isEnabled = false
 
         let openShortcutAccessMenuItem = NSMenuItem(
@@ -218,6 +228,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         openShortcutAccessMenuItem.target = self
+        openShortcutAccessMenuItem.image = MenuIcon.system("accessibility")
 
         let openMicrophoneSettingsMenuItem = NSMenuItem(
             title: "Open Microphone Settings",
@@ -225,6 +236,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         openMicrophoneSettingsMenuItem.target = self
+        openMicrophoneSettingsMenuItem.image = MenuIcon.system("mic.badge.plus")
 
         let recheckMenuItem = NSMenuItem(
             title: "Recheck Permissions",
@@ -232,9 +244,11 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         recheckMenuItem.target = self
+        recheckMenuItem.image = MenuIcon.system("arrow.clockwise")
 
         let quitMenuItem = NSMenuItem(title: "Quit Glyph", action: #selector(quit), keyEquivalent: "q")
         quitMenuItem.target = self
+        quitMenuItem.image = MenuIcon.system("xmark.circle")
 
         menu.addItem(statusMenuItem)
         menu.addItem(lastTranscriptPreviewMenuItem)
@@ -264,26 +278,31 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         switch state {
         case .idle:
             statusItem?.button?.image = idleStatusIcon
+            statusMenuItem.image = MenuIcon.system("checkmark.circle")
             statusMenuItem.title = "Ready. Hold Right Option."
             statusItem?.button?.toolTip = "Glyph: Ready. Hold Right Option."
         case .recording:
             transientStatusToken = nil
             statusItem?.button?.image = recordingStatusIcon
+            statusMenuItem.image = MenuIcon.system("record.circle")
             statusMenuItem.title = "Recording"
             statusItem?.button?.toolTip = "Glyph: Recording"
         case .transcribing:
             transientStatusToken = nil
             statusItem?.button?.image = transcribingStatusIcon
+            statusMenuItem.image = MenuIcon.system("waveform")
             statusMenuItem.title = "Transcribing with whisper.cpp"
             statusItem?.button?.toolTip = "Glyph: Transcribing with whisper.cpp"
         case .injecting:
             transientStatusToken = nil
             statusItem?.button?.image = transcribingStatusIcon
+            statusMenuItem.image = MenuIcon.system("paperplane")
             statusMenuItem.title = "Sending to Ghostty"
             statusItem?.button?.toolTip = "Glyph: Sending to Ghostty"
         case .error(let message):
             transientStatusToken = nil
             statusItem?.button?.image = errorStatusIcon
+            statusMenuItem.image = MenuIcon.system("exclamationmark.triangle")
             statusMenuItem.title = message
             statusItem?.button?.toolTip = "Glyph: \(message)"
         }
@@ -293,7 +312,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         refreshLastTranscriptPreview()
     }
 
-    private func requestAccessibilityIfNeeded() {
+    private func requestAccessibilityIfNeeded() -> PermissionStatus {
         refreshPermissionStatus(promptAccessibility: true)
     }
 
@@ -310,11 +329,104 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         let status = PermissionStatus.current(shortcutAllowed: shortcutAllowed)
         shortcutAccessMenuItem.title = status.shortcutTitle
         microphoneAccessMenuItem.title = status.microphoneTitle
+        refreshPermissionMenuIcons(status)
         return status
     }
 
     private func showPermissionStatus(_ status: PermissionStatus) {
         showTransientStatus(status.summaryTitle)
+    }
+
+    private func refreshPermissionMenuIcons(_ status: PermissionStatus) {
+        shortcutAccessMenuItem.image = MenuIcon.system(status.shortcutAllowed ? "keyboard.badge.checkmark" : "keyboard.badge.exclamationmark")
+        microphoneAccessMenuItem.image = MenuIcon.system(status.microphoneAllowed ? "mic" : "mic.slash")
+    }
+
+    private func showPermissionOnboardingIfNeeded(_ status: PermissionStatus, force: Bool = false) {
+        guard !status.allAllowed else {
+            return
+        }
+        guard force || !userDefaults.bool(forKey: Self.permissionOnboardingShownDefaultsKey) else {
+            return
+        }
+
+        userDefaults.set(true, forKey: Self.permissionOnboardingShownDefaultsKey)
+
+        if let permissionPanel, permissionPanel.isVisible {
+            permissionPanel.orderFrontRegardless()
+            return
+        }
+
+        let panelFrame = NSRect(x: 0, y: 0, width: 440, height: 260)
+        let panel = NSPanel(
+            contentRect: panelFrame,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Glyph Permissions"
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.appearance = NSAppearance(named: .darkAqua)
+
+        let contentView = NSVisualEffectView(frame: panelFrame)
+        contentView.material = .hudWindow
+        contentView.blendingMode = .behindWindow
+        contentView.state = .active
+        panel.contentView = contentView
+
+        let titleLabel = NSTextField(labelWithString: "Finish Glyph Setup")
+        titleLabel.frame = NSRect(x: 28, y: 198, width: 384, height: 24)
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.textColor = NSColor(calibratedWhite: 1, alpha: 0.94)
+
+        let subtitleLabel = NSTextField(wrappingLabelWithString: "Glyph needs these macOS permissions to hold Right Option, record, and send text into Ghostty.")
+        subtitleLabel.frame = NSRect(x: 28, y: 154, width: 384, height: 40)
+        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        subtitleLabel.textColor = NSColor(calibratedWhite: 1, alpha: 0.70)
+
+        let shortcutLabel = permissionLabel(
+            title: status.shortcutTitle,
+            frame: NSRect(x: 28, y: 112, width: 184, height: 24)
+        )
+        let microphoneLabel = permissionLabel(
+            title: status.microphoneTitle,
+            frame: NSRect(x: 228, y: 112, width: 184, height: 24)
+        )
+
+        let accessibilityButton = NSButton(title: "Accessibility", target: self, action: #selector(openAccessibilitySettings))
+        accessibilityButton.frame = NSRect(x: 28, y: 56, width: 130, height: 32)
+        accessibilityButton.bezelStyle = .rounded
+
+        let microphoneButton = NSButton(title: "Microphone", target: self, action: #selector(openMicrophoneSettings))
+        microphoneButton.frame = NSRect(x: 166, y: 56, width: 118, height: 32)
+        microphoneButton.bezelStyle = .rounded
+
+        let doneButton = NSButton(title: "Done", target: self, action: #selector(closePermissionPanel))
+        doneButton.frame = NSRect(x: 312, y: 56, width: 100, height: 32)
+        doneButton.bezelStyle = .rounded
+        doneButton.keyEquivalent = "\r"
+
+        for view in [titleLabel, subtitleLabel, shortcutLabel, microphoneLabel, accessibilityButton, microphoneButton, doneButton] {
+            contentView.addSubview(view)
+        }
+
+        permissionPanel = panel
+        panel.center()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func permissionLabel(title: String, frame: NSRect) -> NSTextField {
+        let label = NSTextField(labelWithString: title)
+        label.frame = frame
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = NSColor(calibratedWhite: 1, alpha: 0.84)
+        return label
+    }
+
+    @objc private func closePermissionPanel() {
+        permissionPanel?.close()
     }
 
     private func refreshAutoSubmitMenuItem() {
@@ -469,6 +581,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func startRecording() async {
         guard await requestMicrophoneAccess() else {
             state = .error("Microphone permission is required")
+            showPermissionOnboardingIfNeeded(refreshPermissionStatus(promptAccessibility: false), force: true)
             return
         }
 
@@ -484,6 +597,8 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             startWaveformHUD()
         } catch {
             state = .error(error.localizedDescription)
+            waveformHUD.showError("Recording Failed")
+            hideHUDLater()
         }
     }
 
@@ -500,15 +615,17 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         recorder.stop()
         self.recorder = nil
         recordingStartedAt = nil
-        stopWaveformHUD()
+        stopWaveformTimer()
 
         guard duration >= 0.35 else {
             removeTemporaryRecording(audioURL)
+            stopWaveformHUD()
             state = .idle
             return
         }
 
         state = .transcribing
+        waveformHUD.showTranscribing()
 
         Task {
             await transcribeAndInject(audioURL)
@@ -532,11 +649,17 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
                 try await injectIntoGhostty(transcript)
                 state = .idle
                 showTransientStatus(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
+                waveformHUD.showResult(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
+                hideHUDLater()
             } catch {
                 state = .error(error.localizedDescription)
+                waveformHUD.showError("Send Failed")
+                hideHUDLater()
             }
         } catch {
             state = .error(error.localizedDescription)
+            waveformHUD.showError("Transcription Failed")
+            hideHUDLater()
         }
     }
 
@@ -545,8 +668,12 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             try await injectIntoGhostty(lastTranscript)
             state = .idle
             showTransientStatus(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
+            waveformHUD.showResult(autoSubmitEnabled ? "Submitted to Codex" : "Sent to Ghostty")
+            hideHUDLater()
         } catch {
             state = .error(error.localizedDescription)
+            waveformHUD.showError("Send Failed")
+            hideHUDLater()
         }
     }
 
@@ -582,7 +709,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func startWaveformHUD() {
         waveformTimer?.invalidate()
-        waveformHUD.show()
+        waveformHUD.showRecording()
         if let recorder {
             waveformHUD.update(from: recorder)
         }
@@ -611,6 +738,18 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         waveformTimer?.invalidate()
         waveformTimer = nil
         waveformHUD.hide()
+    }
+
+    private func stopWaveformTimer() {
+        waveformTimer?.invalidate()
+        waveformTimer = nil
+    }
+
+    private func hideHUDLater() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.1))
+            waveformHUD.hide()
+        }
     }
 
     private func nextRecordingURL() throws -> URL {
@@ -708,10 +847,25 @@ private enum GlyphMenuBarIcon {
     }
 }
 
+private enum MenuIcon {
+    static func system(_ name: String) -> NSImage? {
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) else {
+            return nil
+        }
+
+        image.isTemplate = true
+        return image
+    }
+}
+
 private struct PermissionStatus {
     var shortcutAllowed: Bool
     var microphoneAllowed: Bool
     var microphoneTitle: String
+
+    var allAllowed: Bool {
+        shortcutAllowed && microphoneAllowed
+    }
 
     var shortcutTitle: String {
         shortcutAllowed ? "Shortcut: Allowed" : "Shortcut: Missing"
