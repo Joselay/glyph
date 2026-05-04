@@ -1,7 +1,7 @@
 APP_NAME := Glyph
 APP_BUNDLE_ID := com.menglay.glyph
 CONFIGURATION := release
-BUILD_ROOT := build
+BUILD_ROOT := .build/glyph-app
 APP_DIR := $(BUILD_ROOT)/$(APP_NAME).app
 EXECUTABLE := .build/$(CONFIGURATION)/$(APP_NAME)
 APP_ICON := $(BUILD_ROOT)/AppIcon.icns
@@ -35,6 +35,7 @@ run: stop app
 install: stop app
 	rm -rf "/Applications/$(APP_NAME).app"
 	ditto "$(APP_DIR)" "/Applications/$(APP_NAME).app"
+	rm -rf "$(APP_DIR)"
 	open "/Applications/$(APP_NAME).app"
 
 stop:
@@ -55,4 +56,4 @@ spec:
 test: spec
 
 clean:
-	rm -rf .build "$(BUILD_ROOT)"
+	rm -rf .build build
