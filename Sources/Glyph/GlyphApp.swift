@@ -30,6 +30,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private let settings = WhisperSettings.defaults()
     private var statusItem: NSStatusItem?
+    private let statusIcon = GlyphMenuBarIcon.makeImage()
     private var sendLastMenuItem = NSMenuItem()
     private var copyLastMenuItem = NSMenuItem()
     private var shortcutAccessMenuItem = NSMenuItem()
@@ -111,8 +112,11 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     private func configureStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem?.button?.title = "Glyph"
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem?.button?.image = statusIcon
+        statusItem?.button?.imagePosition = .imageOnly
+        statusItem?.button?.title = ""
+        statusItem?.button?.toolTip = "Glyph"
 
         let menu = NSMenu()
 
@@ -187,19 +191,19 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func updateStatus() {
         switch state {
         case .idle:
-            statusItem?.button?.title = "Glyph"
             statusMenuItem.title = "Ready. Hold Right Option."
+            statusItem?.button?.toolTip = "Glyph: Ready. Hold Right Option."
         case .recording:
             refreshRecordingPresentation()
         case .transcribing:
-            statusItem?.button?.title = "Glyph ..."
             statusMenuItem.title = "Transcribing with whisper.cpp"
+            statusItem?.button?.toolTip = "Glyph: Transcribing with whisper.cpp"
         case .injecting:
-            statusItem?.button?.title = "Send ..."
             statusMenuItem.title = "Sending to Ghostty"
+            statusItem?.button?.toolTip = "Glyph: Sending to Ghostty"
         case .error(let message):
-            statusItem?.button?.title = "Glyph !"
             statusMenuItem.title = message
+            statusItem?.button?.toolTip = "Glyph: \(message)"
         }
 
         sendLastMenuItem.isEnabled = !lastTranscript.isEmpty
@@ -452,8 +456,8 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func refreshRecordingPresentation() {
         let elapsed = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-        statusItem?.button?.title = "Rec \(formatDuration(elapsed))"
         statusMenuItem.title = "Recording \(formatDuration(elapsed))"
+        statusItem?.button?.toolTip = "Glyph: Recording \(formatDuration(elapsed))"
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -463,5 +467,48 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     private func removeTemporaryRecording(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
+    }
+}
+
+private enum GlyphMenuBarIcon {
+    static func makeImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size)
+
+        image.lockFocus()
+        defer {
+            image.unlockFocus()
+            image.isTemplate = true
+        }
+
+        NSColor.black.setStroke()
+
+        let badge = NSBezierPath(
+            roundedRect: NSRect(x: 2, y: 2, width: 14, height: 14),
+            xRadius: 3.4,
+            yRadius: 3.4
+        )
+        NSColor.black.setFill()
+        badge.fill()
+
+        drawCutoutLine(from: NSPoint(x: 7, y: 5.4), to: NSPoint(x: 11.2, y: 9), lineWidth: 2.4)
+        drawCutoutLine(from: NSPoint(x: 11.2, y: 9), to: NSPoint(x: 7, y: 12.6), lineWidth: 2.4)
+
+        return image
+    }
+
+    private static func drawCutoutLine(from start: NSPoint, to end: NSPoint, lineWidth: CGFloat) {
+        let path = NSBezierPath()
+        path.lineWidth = lineWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.move(to: start)
+        path.line(to: end)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .destinationOut
+        NSColor.black.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
