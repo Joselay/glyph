@@ -29,6 +29,7 @@ expect(
 expect(defaultSettings.language == "en", "default language should be English")
 expect(defaultSettings.language == WhisperSettings.englishLanguageCode, "language should use the fixed English code")
 expect(defaultSettings.threads == 8, "default thread count should be 8 when enough processors are available")
+expect(defaultSettings.prompt == WhisperSettings.defaultPrompt, "default prompt should use the shared prompt constant")
 
 let overriddenSettings = WhisperSettings.defaults(
     homeDirectory: "/Users/example",
