@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 import AVFAudio
-import AVFoundation
 import GlyphCore
 import ServiceManagement
 
@@ -21,6 +20,14 @@ struct GlyphMain {
 final class GlyphApp: NSObject, NSApplicationDelegate {
     private static let rightOptionKeyCode: UInt16 = 61
     private static let autoSubmitDefaultsKey = "autoSubmitEnabled"
+    private static let audioRecordingSettings: [String: Any] = [
+        AVFormatIDKey: Int(kAudioFormatLinearPCM),
+        AVSampleRateKey: 16_000,
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsFloatKey: false,
+        AVLinearPCMIsBigEndianKey: false
+    ]
 
     private enum State {
         case idle
@@ -50,9 +57,10 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private var isRecordingChordDown = false
     private var recorder: AVAudioRecorder?
     private var waveformTimer: Timer?
-    private var recordingStartedAt: Date?
+    private var recordingStartedAt: TimeInterval?
     private var lastTranscript = ""
     private var transientStatusToken: UUID?
+    private let ghosttyInjector = GhosttyInjector()
     private var state: State = .idle {
         didSet {
             updateStatus()
@@ -471,7 +479,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             recorder.prepareToRecord()
             recorder.record()
             self.recorder = recorder
-            recordingStartedAt = Date()
+            recordingStartedAt = ProcessInfo.processInfo.systemUptime
             state = .recording
             startWaveformHUD()
         } catch {
@@ -487,7 +495,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
         let audioURL = recorder.url
         let recorderDuration = recorder.currentTime
-        let wallClockDuration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let wallClockDuration = recordingStartedAt.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
         let duration = max(recorderDuration, wallClockDuration)
         recorder.stop()
         self.recorder = nil
@@ -545,8 +553,9 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private func injectIntoGhostty(_ text: String) async throws {
         state = .injecting
         let shouldSubmit = autoSubmitEnabled
+        let injector = ghosttyInjector
         try await Task.detached(priority: .userInitiated) {
-            try GhosttyInjector().inject(text, submit: shouldSubmit)
+            try injector.inject(text, submit: shouldSubmit)
         }.value
     }
 
@@ -578,15 +587,22 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             waveformHUD.update(from: recorder)
         }
 
-        waveformTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let recorder = self.recorder else {
-                    return
-                }
+        waveformTimer = Timer.scheduledTimer(
+            timeInterval: 1.0 / 15.0,
+            target: self,
+            selector: #selector(updateWaveformFromTimer),
+            userInfo: nil,
+            repeats: true
+        )
+        waveformTimer?.tolerance = 0.02
+    }
 
-                self.waveformHUD.update(from: recorder)
-            }
+    @objc private func updateWaveformFromTimer(_ timer: Timer) {
+        guard let recorder else {
+            return
         }
+
+        waveformHUD.update(from: recorder)
     }
 
     private func stopWaveformHUD() {
@@ -604,14 +620,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     private func audioSettings() -> [String: Any] {
-        [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16_000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false
-        ]
+        Self.audioRecordingSettings
     }
 
     private func removeTemporaryRecording(_ url: URL) {

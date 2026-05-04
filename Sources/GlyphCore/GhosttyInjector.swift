@@ -18,7 +18,7 @@ public enum GhosttyInjectorError: Error, LocalizedError, Sendable {
     }
 }
 
-public struct GhosttyInjector: Sendable {
+public final class GhosttyInjector: @unchecked Sendable {
     public static let ghosttyBundleIdentifier = "com.mitchellh.ghostty"
     public static let handlerName = "injectText"
 
@@ -37,18 +37,18 @@ public struct GhosttyInjector: Sendable {
     end \(handlerName)
     """
 
+    private let lock = NSLock()
+    private var compiledScript: NSAppleScript?
+
     public init() {}
 
     public func inject(_ text: String, submit: Bool = false) throws {
-        guard let script = NSAppleScript(source: Self.scriptSource) else {
-            throw GhosttyInjectorError.compileFailed("Could not create NSAppleScript.")
+        lock.lock()
+        defer {
+            lock.unlock()
         }
 
-        var compileError: NSDictionary?
-        guard script.compileAndReturnError(&compileError) else {
-            throw GhosttyInjectorError.compileFailed(Self.errorMessage(from: compileError))
-        }
-
+        let script = try script()
         var executionError: NSDictionary?
         let result = script.executeAppleEvent(Self.eventDescriptor(for: text, submit: submit), error: &executionError)
 
@@ -59,6 +59,24 @@ public struct GhosttyInjector: Sendable {
         guard result.stringValue == "ok" else {
             throw GhosttyInjectorError.noResult
         }
+    }
+
+    private func script() throws -> NSAppleScript {
+        if let compiledScript {
+            return compiledScript
+        }
+
+        guard let script = NSAppleScript(source: Self.scriptSource) else {
+            throw GhosttyInjectorError.compileFailed("Could not create NSAppleScript.")
+        }
+
+        var compileError: NSDictionary?
+        guard script.compileAndReturnError(&compileError) else {
+            throw GhosttyInjectorError.compileFailed(Self.errorMessage(from: compileError))
+        }
+
+        compiledScript = script
+        return script
     }
 
     public static func eventDescriptor(for text: String, submit: Bool = false) -> NSAppleEventDescriptor {

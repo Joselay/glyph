@@ -42,36 +42,18 @@ public struct WhisperTranscriber: Sendable {
         process.executableURL = URL(fileURLWithPath: settings.executablePath)
         process.arguments = arguments(for: audioFile)
 
-        let temporaryDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("Glyph-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-        defer {
-            try? fileManager.removeItem(at: temporaryDirectory)
-        }
-
-        let stdoutURL = temporaryDirectory.appendingPathComponent("stdout.txt")
-        let stderrURL = temporaryDirectory.appendingPathComponent("stderr.txt")
-        fileManager.createFile(atPath: stdoutURL.path, contents: nil)
-        fileManager.createFile(atPath: stderrURL.path, contents: nil)
-
-        let stdout = try FileHandle(forWritingTo: stdoutURL)
-        let stderr = try FileHandle(forWritingTo: stderrURL)
-        defer {
-            try? stdout.close()
-            try? stderr.close()
-        }
-
-        process.standardOutput = stdout
-        process.standardError = stderr
+        let stdout = ProcessOutputCapture()
+        let stderr = ProcessOutputCapture()
+        process.standardOutput = stdout.pipe
+        process.standardError = stderr.pipe
 
         try process.run()
+        stdout.startReading()
+        stderr.startReading()
         process.waitUntilExit()
 
-        try stdout.close()
-        try stderr.close()
-
-        let output = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
-        let errorOutput = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
+        let output = stdout.stringValue()
+        let errorOutput = stderr.stringValue()
 
         guard process.terminationStatus == 0 else {
             throw WhisperTranscriberError.whisperFailed(
@@ -97,7 +79,31 @@ public struct WhisperTranscriber: Sendable {
             "--suppress-nst",
             "-l", settings.language,
             "-t", String(settings.threads),
+            "-bs", "1",
+            "-bo", "1",
+            "-nf",
             "--prompt", settings.prompt
         ]
+    }
+}
+
+private final class ProcessOutputCapture: @unchecked Sendable {
+    let pipe = Pipe()
+
+    private let group = DispatchGroup()
+    private let queue = DispatchQueue(label: "Glyph.ProcessOutputCapture", qos: .userInitiated)
+    private var data = Data()
+
+    func startReading() {
+        group.enter()
+        queue.async {
+            self.data = self.pipe.fileHandleForReading.readDataToEndOfFile()
+            self.group.leave()
+        }
+    }
+
+    func stringValue() -> String {
+        group.wait()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }

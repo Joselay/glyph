@@ -77,6 +77,9 @@ let whisperArguments = WhisperTranscriber(settings: overriddenSettings).argument
 expect(whisperArguments.contains("-l"), "whisper arguments should include language flag")
 expect(whisperArguments.contains("en"), "whisper arguments should force English language")
 expect(whisperArguments.contains("--suppress-nst"), "whisper arguments should suppress non-speech tokens")
+expect(whisperArguments.contains("-bs"), "whisper arguments should tune beam size for low latency")
+expect(whisperArguments.contains("-bo"), "whisper arguments should tune best-of candidates for low latency")
+expect(whisperArguments.contains("-nf"), "whisper arguments should skip decoder fallback for predictable latency")
 
 let injectedText = #"say "hello codex""#
 let ghosttyEvent = GhosttyInjector.eventDescriptor(for: injectedText, submit: true)

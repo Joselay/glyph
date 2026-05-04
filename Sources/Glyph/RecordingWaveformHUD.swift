@@ -1,5 +1,5 @@
 import AppKit
-import AVFoundation
+import AVFAudio
 
 @MainActor
 final class RecordingWaveformHUD {
