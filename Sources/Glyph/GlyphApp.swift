@@ -484,15 +484,15 @@ private enum GlyphMenuBarIcon {
         NSColor.black.setStroke()
 
         let badge = NSBezierPath(
-            roundedRect: NSRect(x: 2, y: 2, width: 14, height: 14),
-            xRadius: 3.4,
-            yRadius: 3.4
+            roundedRect: NSRect(x: 1.25, y: 1.25, width: 15.5, height: 15.5),
+            xRadius: 3.8,
+            yRadius: 3.8
         )
         NSColor.black.setFill()
         badge.fill()
 
-        drawCutoutLine(from: NSPoint(x: 7, y: 5.4), to: NSPoint(x: 11.2, y: 9), lineWidth: 2.4)
-        drawCutoutLine(from: NSPoint(x: 11.2, y: 9), to: NSPoint(x: 7, y: 12.6), lineWidth: 2.4)
+        drawCutoutLine(from: NSPoint(x: 6.6, y: 5.1), to: NSPoint(x: 11.5, y: 9), lineWidth: 2.5)
+        drawCutoutLine(from: NSPoint(x: 11.5, y: 9), to: NSPoint(x: 6.6, y: 12.9), lineWidth: 2.5)
 
         return image
     }

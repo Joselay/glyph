@@ -4,15 +4,17 @@ CONFIGURATION := release
 BUILD_ROOT := build
 APP_DIR := $(BUILD_ROOT)/$(APP_NAME).app
 EXECUTABLE := .build/$(CONFIGURATION)/$(APP_NAME)
+APP_ICON := $(BUILD_ROOT)/AppIcon.icns
 SIGN_IDENTITY ?= Glyph Local Code Signing
 
-.PHONY: app build run install stop spec test clean
+.PHONY: app build icon run install stop spec test clean
 
-app: build
+app: build icon
 	rm -rf "$(APP_DIR)"
 	mkdir -p "$(APP_DIR)/Contents/MacOS" "$(APP_DIR)/Contents/Resources"
 	cp "$(EXECUTABLE)" "$(APP_DIR)/Contents/MacOS/$(APP_NAME)"
 	cp Resources/Info.plist "$(APP_DIR)/Contents/Info.plist"
+	cp "$(APP_ICON)" "$(APP_DIR)/Contents/Resources/AppIcon.icns"
 	chmod +x "$(APP_DIR)/Contents/MacOS/$(APP_NAME)"
 	if security find-identity -v -p codesigning | grep -q '"$(SIGN_IDENTITY)"'; then \
 		codesign --force --deep --sign "$(SIGN_IDENTITY)" "$(APP_DIR)" >/dev/null; \
@@ -23,6 +25,9 @@ app: build
 
 build:
 	swift build -c $(CONFIGURATION)
+
+icon:
+	swift Scripts/generate_app_icon.swift "$(BUILD_ROOT)"
 
 run: stop app
 	open "$(APP_DIR)"
