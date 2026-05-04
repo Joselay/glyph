@@ -19,16 +19,9 @@ struct GlyphMain {
 @MainActor
 final class GlyphApp: NSObject, NSApplicationDelegate {
     private static let rightOptionKeyCode: UInt16 = 61
+    private static let minimumRecordingDuration: TimeInterval = 0.35
     private static let autoSubmitDefaultsKey = "autoSubmitEnabled"
     private static let permissionOnboardingShownDefaultsKey = "permissionOnboardingShown"
-    private static let audioRecordingSettings: [String: Any] = [
-        AVFormatIDKey: Int(kAudioFormatLinearPCM),
-        AVSampleRateKey: 16_000,
-        AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 16,
-        AVLinearPCMIsFloatKey: false,
-        AVLinearPCMIsBigEndianKey: false
-    ]
 
     private enum State {
         case idle
@@ -104,12 +97,16 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     private var launchAtLoginMenuItem = NSMenuItem()
     private var permissionsMenuItem = NSMenuItem()
     private var statusMenuItem = NSMenuItem()
-    private var permissionPanel: NSPanel?
+    private lazy var permissionOnboardingPanel = PermissionOnboardingPanel(
+        target: self,
+        accessibilityAction: #selector(openAccessibilitySettings),
+        microphoneAction: #selector(openMicrophoneSettings),
+        doneAction: #selector(closePermissionPanel)
+    )
     private var eventMonitors: [Any] = []
     private var isRecordingChordDown = false
-    private var recorder: AVAudioRecorder?
     private var waveformTimer: Timer?
-    private var recordingStartedAt: TimeInterval?
+    private let recordingSession = RecordingSession()
     private var lastTranscript = ""
     private var transientStatusToken: UUID?
     private let ghosttyInjector = GhosttyInjector()
@@ -140,7 +137,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         for monitor in eventMonitors {
             NSEvent.removeMonitor(monitor)
         }
-        recorder?.stop()
+        recordingSession.cancel()
         stopWaveformHUD()
     }
 
@@ -356,81 +353,11 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
         userDefaults.set(true, forKey: Self.permissionOnboardingShownDefaultsKey)
 
-        if let permissionPanel, permissionPanel.isVisible {
-            permissionPanel.orderFrontRegardless()
-            return
-        }
-
-        let panelFrame = NSRect(x: 0, y: 0, width: 440, height: 260)
-        let panel = NSPanel(
-            contentRect: panelFrame,
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "Glyph Permissions"
-        panel.isReleasedWhenClosed = false
-        panel.level = .floating
-        panel.appearance = NSAppearance(named: .darkAqua)
-
-        let contentView = NSVisualEffectView(frame: panelFrame)
-        contentView.material = .hudWindow
-        contentView.blendingMode = .behindWindow
-        contentView.state = .active
-        panel.contentView = contentView
-
-        let titleLabel = NSTextField(labelWithString: "Finish Glyph Setup")
-        titleLabel.frame = NSRect(x: 28, y: 198, width: 384, height: 24)
-        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
-        titleLabel.textColor = NSColor(calibratedWhite: 1, alpha: 0.94)
-
-        let subtitleLabel = NSTextField(wrappingLabelWithString: "Glyph needs these macOS permissions to hold Right Option, record, and send text into Ghostty.")
-        subtitleLabel.frame = NSRect(x: 28, y: 154, width: 384, height: 40)
-        subtitleLabel.font = .systemFont(ofSize: 13, weight: .regular)
-        subtitleLabel.textColor = NSColor(calibratedWhite: 1, alpha: 0.70)
-
-        let shortcutLabel = permissionLabel(
-            title: status.shortcutTitle,
-            frame: NSRect(x: 28, y: 112, width: 184, height: 24)
-        )
-        let microphoneLabel = permissionLabel(
-            title: status.microphoneTitle,
-            frame: NSRect(x: 228, y: 112, width: 184, height: 24)
-        )
-
-        let accessibilityButton = NSButton(title: "Accessibility", target: self, action: #selector(openAccessibilitySettings))
-        accessibilityButton.frame = NSRect(x: 28, y: 56, width: 130, height: 32)
-        accessibilityButton.bezelStyle = .rounded
-
-        let microphoneButton = NSButton(title: "Microphone", target: self, action: #selector(openMicrophoneSettings))
-        microphoneButton.frame = NSRect(x: 166, y: 56, width: 118, height: 32)
-        microphoneButton.bezelStyle = .rounded
-
-        let doneButton = NSButton(title: "Done", target: self, action: #selector(closePermissionPanel))
-        doneButton.frame = NSRect(x: 312, y: 56, width: 100, height: 32)
-        doneButton.bezelStyle = .rounded
-        doneButton.keyEquivalent = "\r"
-
-        for view in [titleLabel, subtitleLabel, shortcutLabel, microphoneLabel, accessibilityButton, microphoneButton, doneButton] {
-            contentView.addSubview(view)
-        }
-
-        permissionPanel = panel
-        panel.center()
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func permissionLabel(title: String, frame: NSRect) -> NSTextField {
-        let label = NSTextField(labelWithString: title)
-        label.frame = frame
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.textColor = NSColor(calibratedWhite: 1, alpha: 0.84)
-        return label
+        permissionOnboardingPanel.show(status: status)
     }
 
     @objc private func closePermissionPanel() {
-        permissionPanel?.close()
+        permissionOnboardingPanel.close()
     }
 
     private func refreshAutoSubmitMenuItem() {
@@ -590,12 +517,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         }
 
         do {
-            let url = try nextRecordingURL()
-            let recorder = try AVAudioRecorder(url: url, settings: audioSettings())
-            recorder.prepareToRecord()
-            recorder.record()
-            self.recorder = recorder
-            recordingStartedAt = ProcessInfo.processInfo.systemUptime
+            try recordingSession.start()
             state = .recording
             startWaveformHUD()
         } catch {
@@ -604,38 +526,30 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     private func stopRecording() {
-        guard let recorder else {
+        guard let result = recordingSession.stop(minimumDuration: Self.minimumRecordingDuration) else {
             state = .idle
             return
         }
 
-        let audioURL = recorder.url
-        let recorderDuration = recorder.currentTime
-        let wallClockDuration = recordingStartedAt.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
-        let duration = max(recorderDuration, wallClockDuration)
-        recorder.stop()
-        self.recorder = nil
-        recordingStartedAt = nil
-
-        guard duration >= 0.35 else {
-            removeTemporaryRecording(audioURL)
+        switch result {
+        case .tooShort(let audioURL):
+            recordingSession.removeTemporaryRecording(audioURL)
             stopWaveformHUD()
             state = .idle
-            return
-        }
+        case .ready(let audioURL):
+            state = .transcribing
+            waveformHUD.showTranscribing()
 
-        state = .transcribing
-        waveformHUD.showTranscribing()
-
-        Task {
-            await transcribeAndInject(audioURL)
+            Task {
+                await transcribeAndInject(audioURL)
+            }
         }
     }
 
     private func transcribeAndInject(_ audioURL: URL) async {
         let settings = settings
         defer {
-            removeTemporaryRecording(audioURL)
+            recordingSession.removeTemporaryRecording(audioURL)
         }
 
         do {
@@ -762,19 +676,4 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func nextRecordingURL() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Glyph", isDirectory: true)
-
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("recording-\(UUID().uuidString).wav")
-    }
-
-    private func audioSettings() -> [String: Any] {
-        Self.audioRecordingSettings
-    }
-
-    private func removeTemporaryRecording(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
-    }
 }

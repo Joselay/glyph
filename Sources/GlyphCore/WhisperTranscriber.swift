@@ -88,15 +88,20 @@ public struct WhisperTranscriber: Sendable {
 }
 
 private final class ProcessOutputCapture: @unchecked Sendable {
+    private static let readQueue = DispatchQueue(
+        label: "Glyph.ProcessOutputCapture",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
     let pipe = Pipe()
 
     private let group = DispatchGroup()
-    private let queue = DispatchQueue(label: "Glyph.ProcessOutputCapture", qos: .userInitiated)
     private var data = Data()
 
     func startReading() {
         group.enter()
-        queue.async {
+        Self.readQueue.async {
             self.data = self.pipe.fileHandleForReading.readDataToEndOfFile()
             self.group.leave()
         }

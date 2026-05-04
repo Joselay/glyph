@@ -111,7 +111,19 @@ private final class RecordingWaveformView: NSView {
     }
 
     private static let barCount = 36
-    private var levels = Array(repeating: CGFloat(0.18), count: barCount)
+    private static let baselineLevel = CGFloat(0.18)
+    private static let errorLevel = CGFloat(0.22)
+    private let statusAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+        .foregroundColor: NSColor(calibratedWhite: 1, alpha: 0.90)
+    ]
+    private let recordingStatusColor = NSColor(calibratedRed: 0.46, green: 0.92, blue: 0.63, alpha: 1)
+    private let transcribingStatusColor = NSColor(calibratedRed: 0.46, green: 0.72, blue: 1.00, alpha: 1)
+    private let errorStatusColor = NSColor(calibratedRed: 1.00, green: 0.42, blue: 0.42, alpha: 1)
+    private let recordingWaveformColor = NSColor(calibratedRed: 0.50, green: 0.76, blue: 1.00, alpha: 1)
+    private let transcribingWaveformColor = NSColor(calibratedRed: 0.70, green: 0.58, blue: 1.00, alpha: 1)
+    private let errorWaveformColor = NSColor(calibratedRed: 1.00, green: 0.48, blue: 0.48, alpha: 1)
+    private var levels = Array(repeating: baselineLevel, count: barCount)
     private var processingFrame = 0
     var phase = Phase.recording {
         didSet {
@@ -124,7 +136,7 @@ private final class RecordingWaveformView: NSView {
     }
 
     func reset() {
-        levels = Array(repeating: CGFloat(0.18), count: Self.barCount)
+        fillLevels(with: Self.baselineLevel)
         processingFrame = 0
         phase = .recording
         needsDisplay = true
@@ -155,8 +167,14 @@ private final class RecordingWaveformView: NSView {
     }
 
     func setErrorPattern() {
-        levels = Array(repeating: CGFloat(0.22), count: Self.barCount)
+        fillLevels(with: Self.errorLevel)
         needsDisplay = true
+    }
+
+    private func fillLevels(with value: CGFloat) {
+        for index in levels.indices {
+            levels[index] = value
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -172,24 +190,20 @@ private final class RecordingWaveformView: NSView {
         status.color.setFill()
         NSBezierPath(ovalIn: NSRect(x: rect.minX, y: rect.minY + 4, width: 9, height: 9)).fill()
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 1, alpha: 0.90)
-        ]
         NSString(string: status.title).draw(
             at: NSPoint(x: rect.minX + 16, y: rect.minY - 1),
-            withAttributes: attributes
+            withAttributes: statusAttributes
         )
     }
 
     private var statusPresentation: (title: String, color: NSColor) {
         switch phase {
         case .recording:
-            ("Recording", NSColor(calibratedRed: 0.46, green: 0.92, blue: 0.63, alpha: 1))
+            ("Recording", recordingStatusColor)
         case .transcribing:
-            ("Transcribing", NSColor(calibratedRed: 0.46, green: 0.72, blue: 1.00, alpha: 1))
+            ("Transcribing", transcribingStatusColor)
         case .error(let title):
-            (title, NSColor(calibratedRed: 1.00, green: 0.42, blue: 0.42, alpha: 1))
+            (title, errorStatusColor)
         }
     }
 
@@ -218,11 +232,11 @@ private final class RecordingWaveformView: NSView {
     private var waveformColor: NSColor {
         switch phase {
         case .recording:
-            NSColor(calibratedRed: 0.50, green: 0.76, blue: 1.00, alpha: 1)
+            recordingWaveformColor
         case .transcribing:
-            NSColor(calibratedRed: 0.70, green: 0.58, blue: 1.00, alpha: 1)
+            transcribingWaveformColor
         case .error:
-            NSColor(calibratedRed: 1.00, green: 0.48, blue: 0.48, alpha: 1)
+            errorWaveformColor
         }
     }
 

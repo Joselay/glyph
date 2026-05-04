@@ -1,6 +1,7 @@
 import AppKit
 import AVFAudio
 
+@MainActor
 enum GlyphMenuBarIcon {
     enum Style {
         case idle
@@ -66,13 +67,21 @@ enum GlyphMenuBarIcon {
     }
 }
 
+@MainActor
 enum MenuIcon {
+    private static var cache: [String: NSImage] = [:]
+
     static func system(_ name: String) -> NSImage? {
+        if let image = cache[name] {
+            return image
+        }
+
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) else {
             return nil
         }
 
         image.isTemplate = true
+        cache[name] = image
         return image
     }
 }
