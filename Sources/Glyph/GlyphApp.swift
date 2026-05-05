@@ -539,7 +539,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
             state = .idle
         case .ready(let audioURL):
             state = .transcribing
-            activeWaveformHUD().showTranscribing()
+            startWaveformProcessingHUD()
 
             Task {
                 await transcribeAndInject(audioURL)
@@ -596,6 +596,7 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
     }
 
     private func injectIntoGhostty(_ text: String) async throws {
+        stopWaveformTimer()
         state = .injecting
         let shouldSubmit = autoSubmitEnabled
         let injector = ghosttyInjector
@@ -662,9 +663,9 @@ final class GlyphApp: NSObject, NSApplicationDelegate {
 
     @objc private func updateWaveformFromTimer(_ timer: Timer) {
         switch state {
-        case .recording, .transcribing, .injecting:
+        case .recording, .transcribing:
             waveformHUD?.advanceAnimation()
-        case .idle, .error:
+        case .idle, .injecting, .error:
             break
         }
     }

@@ -28,8 +28,8 @@ It intentionally has no main window. The menu bar item exposes runtime status, a
 
 On first run, macOS may ask for Microphone, Accessibility, and Automation permission. Accessibility is used for the global hold-to-record trigger. Automation is used to send the transcript from Glyph to Ghostty.
 
-The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies. Its waveform HUD uses one lightweight animation while recording, transcribing, or sending so runtime UI work stays predictable.
-Glyph keeps runtime work short: the waveform timer is idle unless recording, transcribing, or sending, Ghostty injection reuses a compiled AppleScript, and `whisper.cpp` runs with low-latency decoder settings for short developer dictation.
+The app uses Swift 6 language mode, AppKit for a lightweight menu bar process, AVFAudio's current recording-permission API, and no production dependencies. Its waveform HUD animates while recording and transcribing, then stops before sending to Ghostty.
+Glyph keeps runtime work short: the waveform timer is idle outside active recording/transcription, Ghostty injection reuses a compiled AppleScript, and `whisper.cpp` runs with low-latency decoder settings for short developer dictation.
 
 ## Menu
 

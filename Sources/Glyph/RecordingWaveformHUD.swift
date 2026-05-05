@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class RecordingWaveformHUD {
     private let panel: NSPanel
-    private let containerView: NSVisualEffectView
+    private let containerView: NSView
     private let waveformView = RecordingWaveformView()
 
     init() {
@@ -23,10 +23,7 @@ final class RecordingWaveformHUD {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
 
-        containerView = NSVisualEffectView(frame: frame)
-        containerView.material = .hudWindow
-        containerView.blendingMode = .behindWindow
-        containerView.state = .active
+        containerView = NSView(frame: frame)
         containerView.wantsLayer = true
         containerView.layer?.backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 0.76).cgColor
         containerView.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.16).cgColor
