@@ -30,6 +30,12 @@ expect(defaultSettings.language == "en", "default language should be English")
 expect(defaultSettings.language == WhisperSettings.englishLanguageCode, "language should use the fixed English code")
 expect(defaultSettings.threads == 8, "default thread count should be 8 when enough processors are available")
 expect(defaultSettings.prompt == WhisperSettings.defaultPrompt, "default prompt should use the shared prompt constant")
+expect(defaultSettings.prompt.contains("Codex"), "default prompt should bias Codex vocabulary")
+expect(defaultSettings.prompt.contains("Ghostty"), "default prompt should bias Ghostty vocabulary")
+expect(defaultSettings.prompt.contains("AGENTS.md"), "default prompt should bias agent instruction file names")
+expect(defaultSettings.prompt.contains("Package.swift"), "default prompt should bias Swift package file names")
+expect(defaultSettings.prompt.contains("git status"), "default prompt should bias shell command phrases")
+expect(defaultSettings.prompt.contains("stdout"), "default prompt should bias common terminal stream names")
 
 let overriddenSettings = WhisperSettings.defaults(
     homeDirectory: "/Users/example",

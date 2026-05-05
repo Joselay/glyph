@@ -54,11 +54,12 @@ Glyph defaults to a local Whisper install under your home directory:
 ~/whisper-models/ggml-large-v3-turbo-q5_0.bin
 ```
 
-The app always transcribes as English (`-l en`). Binary and model paths can be overridden before launching:
+The app always transcribes as English (`-l en`). Its default prompt is tuned for Codex CLI dictation, Ghostty, file names, shell commands, and common developer vocabulary. Binary, model, and prompt values can be overridden before launching:
 
 ```sh
 GLYPH_WHISPER_CLI=/path/to/whisper-cli \
 GLYPH_WHISPER_MODEL=/path/to/model.bin \
+GLYPH_WHISPER_PROMPT="Custom developer vocabulary for this session." \
 make run
 ```
 

@@ -2,7 +2,11 @@ import Foundation
 
 public struct WhisperSettings: Equatable, Sendable {
     public static let englishLanguageCode = "en"
-    public static let defaultPrompt = "Short developer dictation for Codex CLI. Preserve technical terms, file names, shell commands, and punctuation."
+    public static let defaultPrompt = [
+        "Developer dictation into Codex CLI in Ghostty.",
+        "Keep English technical terms, casing, punctuation, file names, paths, shell commands, flags, and code symbols exact.",
+        "Vocabulary: Codex, Ghostty, AppKit, SwiftUI, SwiftPM, Xcode, TypeScript, JavaScript, Next.js, React, Tailwind, shadcn/ui, Bun, Biome, GitHub, GitLab, AGENTS.md, README.md, Package.swift, Makefile, Info.plist, JSON, YAML, TOML, zsh, Homebrew, Docker, Colima, Postgres, stdout, stderr, stdin, rg, git status, git diff, git commit, git push, chmod, mkdir."
+    ].joined(separator: " ")
 
     private enum EnvironmentKey {
         static let executablePath = "GLYPH_WHISPER_CLI"
